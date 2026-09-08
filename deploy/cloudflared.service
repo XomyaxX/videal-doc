@@ -1,0 +1,14 @@
+[Unit]
+Description=Cloudflare Tunnel for Videal.Doc
+After=network-online.target videal-edo.service
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/cloudflared tunnel --no-autoupdate run --token-file /etc/videal-edo/cloudflared.token
+Restart=always
+RestartSec=5
+User=root
+
+[Install]
+WantedBy=multi-user.target

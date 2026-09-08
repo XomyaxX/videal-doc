@@ -1,0 +1,64 @@
+{
+  "name": "videal-edo",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "lint": "eslint",
+    "setup": "prisma generate && prisma db push && tsx prisma/seed.ts",
+    "seed:staff": "tsx prisma/seed-staff.ts",
+    "seed:demo": "tsx prisma/seed-demo.ts",
+    "seed:prod": "tsx prisma/seed-prod.ts",
+    "seed:aho": "tsx prisma/seed-aho.ts",
+    "backfill:archive": "tsx prisma/backfill-archive.ts",
+    "backfill:assets": "tsx prisma/reclassify-assets.ts",
+    "backfill:receipts": "tsx prisma/backfill-receipt-files.ts",
+    "seed:skills": "tsx prisma/seed-skills.ts",
+    "seed:user-skills": "tsx prisma/seed-user-skills.ts"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "6.16.1",
+    "@react-pdf/renderer": "^4.3.0",
+    "date-fns": "^4.1.0",
+    "dejavu-fonts-ttf": "^2.37.3",
+    "exceljs": "^4.4.0",
+    "jimp": "0.22.12",
+    "jsqr": "^1.4.0",
+    "lucide-react": "^0.544.0",
+    "nodemailer": "^6.9.16",
+    "next": "16.3.3",
+    "pdfjs-dist": "4.10.38",
+    "qrcode": "^1.5.4",
+    "web-push": "^3.6.7",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/nodemailer": "^6.4.17",
+    "@types/node": "^20",
+    "@types/qrcode": "^1.5.5",
+    "@types/web-push": "^3.6.4",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.3",
+    "prisma": "6.16.1",
+    "ssh2": "^1.17.0",
+    "tailwindcss": "^4",
+    "tsx": "^4.19.2",
+    "typescript": "^5"
+  },
+  "allowScripts": {
+    "@prisma/client@6.16.1": true,
+    "@prisma/engines@6.16.1": true,
+    "esbuild@0.28.2": true,
+    "prisma@6.16.1": true
+  }
+}

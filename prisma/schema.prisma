@@ -1,0 +1,1110 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id              String   @id @default(cuid())
+  name            String   @default("Общество с ограниченной ответственностью «Видеаль Медиа»")
+  shortName       String   @default("ООО «Видеаль Медиа»")
+  inn             String   @default("")
+  kpp             String   @default("")
+  ogrn            String   @default("")
+  okpo            String   @default("")
+  legalAddress    String   @default("")
+  actualAddress   String   @default("")
+  postalAddress   String   @default("")
+  phone           String   @default("")
+  email           String   @default("")
+  directorName    String   @default("")
+  directorTitle   String   @default("Генеральный директор")
+  accountantName  String   @default("")
+  bankName        String   @default("")
+  bankBik         String   @default("")
+  bankAccount     String   @default("")
+  corrAccount     String   @default("")
+  logoFileId      String   @default("")
+  facsimileFileId String   @default("")
+  debitAccount    String   @default("Студия")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  description String   @default("")
+  isSystem    Boolean  @default(false)
+  permissions String   @default("[]")
+  users       User[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Department {
+  id        String    @id @default(cuid())
+  name      String
+  deletedAt DateTime?
+  users     User[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Position {
+  id        String    @id @default(cuid())
+  name      String
+  deletedAt DateTime?
+  users     User[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model User {
+  id                 String    @id @default(cuid())
+  login              String    @unique
+  passwordHash       String
+  lastName           String
+  firstName          String
+  middleName         String    @default("")
+  phone              String    @default("")
+  email              String    @default("")
+  smtpPassword       String    @default("")
+  personnelNumber    String    @default("")
+  inn                String    @default("")
+  hiredAt            DateTime?
+  birthDate          DateTime?
+  status             String    @default("active")
+  mustChangePassword Boolean   @default(true)
+  totpSecret         String    @default("")
+  totpEnabled        Boolean   @default(false)
+  photoFileId        String    @default("")
+  signatureFileId    String    @default("")
+  prodScope          String    @default("")
+  currentEpisodeId   String?
+  currentEpisode     Episode?  @relation("UserCurrentEpisode", fields: [currentEpisodeId], references: [id], onDelete: SetNull)
+  soundAlerts        Boolean   @default(true)
+  deletedAt          DateTime?
+
+  roleId       String
+  role         Role        @relation(fields: [roleId], references: [id])
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
+  positionId   String?
+  position     Position?   @relation(fields: [positionId], references: [id])
+  managerId    String?
+  manager      User?       @relation("ManagerReports", fields: [managerId], references: [id])
+  reports      User[]      @relation("ManagerReports")
+
+  sessions          Session[]
+  createdDocuments  Document[]          @relation("DocumentAuthor")
+  receivedDocuments DocumentRecipient[]
+  documentRevisions DocumentRevision[]
+  advanceReports    AdvanceReport[]
+  notifications     Notification[]
+  auditLogs         AuditLog[]
+  calendarEvents    CalendarEvent[]     @relation("EventAuthor")
+  calendarParts     CalendarParticipant[]
+  fundRequests      FundRequest[]       @relation("FundAuthor")
+  fundApprovals     FundRequest[]       @relation("FundManager")
+  fundPayments      FundRequest[]       @relation("FundAccountant")
+  purchaseRequests  PurchaseRequest[]   @relation("PurchaseAuthor")
+  ahoPurchases      PurchaseRequest[]   @relation("AhoHandler")
+  hrRequests        HrRequest[]         @relation("HrAuthor")
+  hrInbox           HrRequest[]         @relation("HrManager")
+  personDocuments   PersonDocument[]
+  assignedTasks     Task[]                 @relation("TaskAssignee")
+  taskEvents        TaskEvent[]
+  uploadedTaskFiles TaskFile[]             @relation("TaskFileUploader")
+  scoreEvents       ProductionScoreEvent[]
+  dateChangeRequests TaskDateChange[]      @relation("DateChangeRequester")
+  dateChangeDecisions TaskDateChange[]     @relation("DateChangeDecider")
+  libraryItems      LibraryItem[]
+  skills            UserSkill[]
+  jobsAuthored      Job[]              @relation("JobAuthor")
+  jobMembers        JobMember[]
+  jobMessages       JobMessage[]
+  jobFiles          JobMessageFile[]   @relation("JobFileUploader")
+  prodChatMessages  ProdChatMessage[]
+  prodChatFiles     ProdChatFile[]     @relation("ProdChatFileUploader")
+  devices           UserDevice[]
+  authChallenges    AuthChallenge[]
+  webPush           WebPushSub[]
+  attendanceDays    AttendanceDay[]
+  attendanceEvents  AttendanceEvent[]
+  attendanceFlags   AttendanceFlag[]
+  inventory         InventoryItem[]
+  chatIdentity      ChatIdentity?
+  chatMembers       ChatMember[]
+  chatMessages      ChatMessage[]
+  chatKeyWraps      ChatKeyWrap[]
+  chatReactions     ChatReaction[]
+  chatLinkOffers    ChatLinkOffer[]
+  correspondences   Correspondence[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  token      String   @unique
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId   String   @default("")
+  userAgent  String   @default("")
+  ip         String   @default("")
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+  expiresAt  DateTime
+  totpOk     Boolean  @default(true)
+  challenges AuthChallenge[]
+
+  @@index([deviceId, userId])
+}
+
+model UserDevice {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String    @default("")
+  platform   String    @default("web")
+  userAgent  String    @default("")
+  pushToken  String    @default("")
+  publicKey  String    @default("")
+  appVersion String    @default("")
+  lastSeenAt DateTime  @default(now())
+  enrolledAt DateTime  @default(now())
+  revokedAt  DateTime?
+
+  @@index([userId])
+}
+
+model AuthChallenge {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionId  String
+  session    Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  kind       String    @default("login")
+  host       String    @default("")
+  expiresAt  DateTime
+  consumedAt DateTime?
+  deniedAt   DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+model WebPushSub {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String   @default("")
+  lastError String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model AttendanceDay {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ymd           String
+  inAt          DateTime?
+  outAt         DateTime?
+  inSource      String    @default("")
+  outSource     String    @default("")
+  inIp          String    @default("")
+  outIp         String    @default("")
+  outRemindedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([userId, ymd])
+  @@index([ymd])
+}
+
+model AttendanceEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ymd       String
+  kind      String
+  ip        String   @default("")
+  detail    String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([userId, ymd])
+}
+
+model AttendanceFlag {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ymd        String
+  kind       String
+  minutes    Int       @default(0)
+  detail     String    @default("")
+  resolvedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@unique([userId, ymd, kind])
+  @@index([ymd])
+}
+
+model InventoryItem {
+  id         String    @id @default(cuid())
+  invNo      String    @default("")
+  name       String
+  qty        Int       @default(1)
+  userId     String?
+  user       User?     @relation(fields: [userId], references: [id])
+  holderName String    @default("")
+  kind       String    @default("item")
+  pcHost     String    @default("")
+  pcCpu      String    @default("")
+  pcGpu      String    @default("")
+  pcRam      String    @default("")
+  pcDisk     String    @default("")
+  pcMb       String    @default("")
+  note       String    @default("")
+  deletedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([invNo])
+}
+
+model StoredFile {
+  id           String   @id @default(cuid())
+  originalName String
+  mimeType     String
+  size         Int
+  path         String
+  sha256       String   @default("")
+  createdById  String   @default("")
+  createdAt    DateTime @default(now())
+}
+
+model Document {
+  id                  String    @id @default(cuid())
+  number              String
+  title               String
+  comment             String    @default("")
+  requireAck          Boolean   @default(true)
+  requireSignedReturn Boolean   @default(false)
+  requireApproval     Boolean   @default(false)
+  remindDaily         Boolean   @default(true)
+  dueAt               DateTime?
+  version             Int       @default(1)
+  status              String    @default("active")
+  authorId            String
+  author              User      @relation("DocumentAuthor", fields: [authorId], references: [id])
+  originalFileId      String
+  printFileId         String    @default("")
+  deletedAt           DateTime?
+  recipients          DocumentRecipient[]
+  revisions           DocumentRevision[]
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+}
+
+model DocumentRecipient {
+  id             String    @id @default(cuid())
+  documentId     String
+  document       Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User      @relation(fields: [userId], references: [id])
+  viewedAt       DateTime?
+  ackedAt        DateTime?
+  ackIp          String    @default("")
+  signedFileId   String    @default("")
+  signedAt       DateTime?
+  rejectedAt     DateTime?
+  rejectReason   String    @default("")
+  isApprover     Boolean   @default(false)
+  approvedAt     DateTime?
+  lastRemindedAt DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@unique([documentId, userId])
+}
+
+model DocumentRevision {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  version    Int
+  fileId     String
+  note       String   @default("")
+  authorId   String
+  author     User     @relation(fields: [authorId], references: [id])
+  createdAt  DateTime @default(now())
+
+  @@unique([documentId, version])
+  @@index([documentId])
+}
+
+model Correspondence {
+  id             String    @id @default(cuid())
+  direction      String
+  number         String
+  datedAt        DateTime  @default(now())
+  correspondent  String
+  subject        String
+  comment        String    @default("")
+  fileId         String    @default("")
+  registeredById String
+  registeredBy   User      @relation(fields: [registeredById], references: [id])
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([direction, datedAt])
+  @@index([number])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String    @default("")
+  link      String    @default("")
+  urgency   String    @default("normal")
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+model AdvanceReport {
+  id             String    @id @default(cuid())
+  number         String
+  userId         String
+  user           User      @relation(fields: [userId], references: [id])
+  purpose        String    @default("")
+  reportDate     DateTime  @default(now())
+  issuedAmount   Int       @default(0)
+  status         String    @default("draft")
+  accountantId   String    @default("")
+  accountantNote String    @default("")
+  directorId     String    @default("")
+  directorNote   String    @default("")
+  reviewedAt     DateTime?
+  approvedAt     DateTime?
+  deletedAt      DateTime?
+  receipts       Receipt[]
+  fundRequests   FundRequest[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model Receipt {
+  id           String    @id @default(cuid())
+  reportId     String
+  report       AdvanceReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  sourceFileId String
+  qrRaw        String    @default("")
+  occurredAt   DateTime?
+  amount       Int       @default(0)
+  fn           String    @default("")
+  fd           String    @default("")
+  fp           String    @default("")
+  nFlag        String    @default("")
+  merchant     String    @default("")
+  merchantInn  String    @default("")
+  itemsJson    String    @default("[]")
+  note         String    @default("")
+  files        ReceiptFile[]
+  createdAt    DateTime  @default(now())
+}
+
+model ReceiptFile {
+  id        String  @id @default(cuid())
+  receiptId String
+  receipt   Receipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  fileId    String
+  sortOrder Int     @default(0)
+
+  @@index([fileId])
+}
+
+model DocumentTemplate {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  description String   @default("")
+  enabled     Boolean  @default(false)
+  fieldsJson  String   @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model CalendarEvent {
+  id           String   @id @default(cuid())
+  title        String
+  body         String   @default("")
+  startsAt     DateTime
+  endsAt       DateTime
+  allDay       Boolean  @default(false)
+  color        String   @default("navy")
+  authorId     String
+  author       User     @relation("EventAuthor", fields: [authorId], references: [id])
+  deletedAt    DateTime?
+  participants CalendarParticipant[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model CalendarParticipant {
+  id      String         @id @default(cuid())
+  eventId String
+  event   CalendarEvent  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId  String
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+}
+
+model FundRequest {
+  id              String    @id @default(cuid())
+  number          String
+  authorId        String
+  author          User      @relation("FundAuthor", fields: [authorId], references: [id])
+  amount          Int
+  purpose         String
+  details         String    @default("")
+  neededAt        DateTime?
+  payee           String    @default("")
+  status          String    @default("draft")
+  managerId       String?
+  manager         User?     @relation("FundManager", fields: [managerId], references: [id])
+  managerNote     String    @default("")
+  managerAt       DateTime?
+  accountantId    String?
+  accountant      User?     @relation("FundAccountant", fields: [accountantId], references: [id])
+  accountantNote  String    @default("")
+  paidAt             DateTime?
+  advanceReportId    String?
+  advanceReport      AdvanceReport? @relation(fields: [advanceReportId], references: [id], onDelete: SetNull)
+  lastReportRemindAt DateTime?
+  deletedAt          DateTime?
+  files              FundRequestFile[]
+  purchaseRequestId  String?   @unique
+  purchaseRequest    PurchaseRequest? @relation(fields: [purchaseRequestId], references: [id])
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model FundRequestFile {
+  id        String      @id @default(cuid())
+  requestId String
+  request   FundRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  fileId    String
+  createdAt DateTime    @default(now())
+}
+
+model PurchaseRequest {
+  id          String   @id @default(cuid())
+  number      String
+  authorId    String
+  author      User     @relation("PurchaseAuthor", fields: [authorId], references: [id])
+  category    String
+  title       String
+  reason      String   @default("")
+  status      String   @default("draft")
+  ahoUserId   String?
+  ahoUser     User?    @relation("AhoHandler", fields: [ahoUserId], references: [id])
+  fundRequest FundRequest?
+  items       PurchaseItem[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  doneAt      DateTime?
+}
+
+model PurchaseItem {
+  id        String           @id @default(cuid())
+  requestId String
+  request   PurchaseRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  name      String
+  qty       Int              @default(1)
+  unit      String           @default("шт")
+  url       String           @default("")
+  note      String           @default("")
+  fileId    String           @default("")
+  sortOrder Int              @default(0)
+}
+
+model HrRequest {
+  id            String   @id @default(cuid())
+  number        String
+  type          String
+  title         String
+  authorId      String
+  author        User     @relation("HrAuthor", fields: [authorId], references: [id])
+  managerId     String
+  manager       User     @relation("HrManager", fields: [managerId], references: [id])
+  status        String   @default("draft")
+  payloadJson   String   @default("{}")
+  signedFileId  String   @default("")
+  managerNote   String   @default("")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Skill {
+  id          String      @id @default(cuid())
+  code        String      @unique
+  name        String
+  body        String      @default("")
+  users       UserSkill[]
+  tasks       TaskSkill[]
+  createdAt   DateTime    @default(now())
+}
+
+model UserSkill {
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skillId   String
+  skill     Skill    @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([userId, skillId])
+}
+
+model PersonDocument {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind        String
+  title       String
+  occurredAt  DateTime
+  source      String
+  sourceId    String
+  fileId      String    @default("")
+  archivePath String    @default("")
+  link        String    @default("")
+  metaJson    String    @default("{}")
+  mailedAt    DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@unique([userId, kind, source, sourceId])
+  @@index([userId, occurredAt])
+  @@index([kind])
+}
+
+model Sequence {
+  key   String @id
+  value Int    @default(0)
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String
+  entity    String
+  entityId  String   @default("")
+  details   String   @default("")
+  ip        String   @default("")
+  createdAt DateTime @default(now())
+}
+
+model AppSettings {
+  id           String  @id @default("default")
+  maxUploadMb  Int     @default(32)
+  sessionDays  Int     @default(30)
+  fnsEnabled   Boolean @default(false)
+  fnsLogin     String  @default("")
+  fnsPassword  String  @default("")
+  smtpHost     String  @default("")
+  smtpPort     Int     @default(587)
+  smtpUser     String  @default("")
+  smtpPassword String  @default("")
+  smtpFrom     String  @default("")
+  mailAutoSend Boolean @default(true)
+  accountantEmail String @default("vidial_kiv@mail.ru")
+  imapHost     String  @default("")
+  imapPort     Int     @default(993)
+  imapUser     String  @default("")
+  imapPassword String  @default("")
+  imapFolder   String  @default("INBOX")
+  lastRemindAt    DateTime?
+  lastBirthdayYmd String    @default("")
+  prodDatesNeedApproval Boolean @default(false)
+  currentEpisodeId String   @default("")
+  officeCidrs      String   @default("")
+  chatDek          String   @default("")
+  chatBackup       String   @default("")
+  chatBackupIv     String   @default("")
+  chatBackupSalt   String   @default("")
+}
+
+model Show {
+  id           String    @id @default(cuid())
+  code         String    @unique
+  name         String
+  pipelineKind String    @default("e02")
+  episodes     Episode[]
+  createdAt    DateTime  @default(now())
+}
+
+model Episode {
+  id       String  @id @default(cuid())
+  showId   String
+  show     Show    @relation(fields: [showId], references: [id], onDelete: Cascade)
+  code     String
+  name     String
+  diskPath String  @default("")
+  scenes   Scene[]
+  assets   Asset[]
+  jobs     Job[]
+  tasks    Task[]
+  currentForUsers User[] @relation("UserCurrentEpisode")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([showId, code])
+}
+
+model Scene {
+  id               String   @id @default(cuid())
+  episodeId        String
+  episode          Episode  @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  code             String
+  title            String
+  locationNote     String   @default("")
+  charactersNote   String   @default("")
+  diskPath         String   @default("")
+  animaticDuration String   @default("")
+  sortOrder        Int      @default(0)
+  shots            Shot[]
+  tasks            Task[]
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([episodeId, code])
+}
+
+model Shot {
+  id          String   @id @default(cuid())
+  sceneId     String
+  scene       Scene    @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  code        String
+  location    String   @default("")
+  description String   @default("")
+  sortOrder   Int      @default(0)
+  workPath    String   @default("")
+  tasks       Task[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([sceneId, code])
+}
+
+model Asset {
+  id          String   @id @default(cuid())
+  episodeId   String
+  episode     Episode  @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  kind        String
+  groupName   String   @default("")
+  name        String
+  description String   @default("")
+  diskPath    String   @default("")
+  sortOrder   Int      @default(0)
+  tasks       Task[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Task {
+  id             String    @id @default(cuid())
+  kind           String
+  stage          String
+  status         String    @default("todo")
+  complexity     Int       @default(3)
+  estimateHours  Float?
+  startsAt       DateTime?
+  dueAt          DateTime?
+  comment        String    @default("")
+  blockedReason  String    @default("")
+  diskDir        String    @default("")
+  sheetCode      String    @default("")
+  scopeKey       String    @default("")
+  title          String    @default("")
+  assigneeLocked Boolean   @default(false)
+  jobId          String?
+  job            Job?      @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  episodeId      String?
+  episode        Episode?  @relation(fields: [episodeId], references: [id], onDelete: SetNull)
+  sceneId        String?
+  scene          Scene?    @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  shotId         String?
+  shot           Shot?     @relation(fields: [shotId], references: [id], onDelete: Cascade)
+  assetId        String?
+  asset          Asset?    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  assigneeId     String?
+  assignee       User?     @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  files          TaskFile[]
+  events         TaskEvent[]
+  scoreEvents    ProductionScoreEvent[]
+  dateChanges    TaskDateChange[]
+  libraryLinks   TaskLibraryItem[]
+  skills         TaskSkill[]
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([assigneeId, status])
+  @@index([stage, status])
+  @@index([scopeKey])
+  @@index([jobId])
+  @@index([episodeId])
+}
+
+model TaskSkill {
+  taskId  String
+  task    Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  skillId String
+  skill   Skill  @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, skillId])
+}
+
+model Job {
+  id          String    @id @default(cuid())
+  title       String
+  description String    @default("")
+  status      String    @default("open")
+  episodeId   String?
+  episode     Episode?  @relation(fields: [episodeId], references: [id], onDelete: SetNull)
+  startsAt    DateTime?
+  dueAt       DateTime?
+  diskDir     String    @default("")
+  uncPath     String    @default("")
+  authorId    String
+  author      User      @relation("JobAuthor", fields: [authorId], references: [id])
+  members     JobMember[]
+  tasks       Task[]
+  messages    JobMessage[]
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status, createdAt])
+  @@index([authorId])
+}
+
+model JobMember {
+  jobId     String
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([jobId, userId])
+}
+
+model JobMessage {
+  id        String           @id @default(cuid())
+  jobId     String
+  job       Job              @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User             @relation(fields: [authorId], references: [id])
+  body      String           @default("")
+  deletedAt DateTime?
+  files     JobMessageFile[]
+  createdAt DateTime         @default(now())
+
+  @@index([jobId, createdAt])
+}
+
+model JobMessageFile {
+  id           String      @id @default(cuid())
+  messageId    String
+  message      JobMessage  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  originalName String
+  mimeType     String      @default("")
+  size         Int         @default(0)
+  fileId       String      @default("")
+  absPath      String      @default("")
+  uncPath      String      @default("")
+  uploadedById String
+  uploadedBy   User        @relation("JobFileUploader", fields: [uploadedById], references: [id])
+  createdAt    DateTime    @default(now())
+}
+
+model ProdChatMessage {
+  id        String         @id @default(cuid())
+  scopeKey  String
+  authorId  String
+  author    User           @relation(fields: [authorId], references: [id])
+  body      String         @default("")
+  deletedAt DateTime?
+  files     ProdChatFile[]
+  createdAt DateTime       @default(now())
+
+  @@index([scopeKey, createdAt])
+}
+
+model ProdChatFile {
+  id           String          @id @default(cuid())
+  messageId    String
+  message      ProdChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  originalName String
+  mimeType     String          @default("")
+  size         Int             @default(0)
+  fileId       String          @default("")
+  absPath      String          @default("")
+  uncPath      String          @default("")
+  uploadedById String
+  uploadedBy   User            @relation("ProdChatFileUploader", fields: [uploadedById], references: [id])
+  createdAt    DateTime        @default(now())
+}
+
+model LibraryItem {
+  id            String   @id @default(cuid())
+  title         String
+  kind          String
+  description   String   @default("")
+  originalName  String   @default("")
+  mimeType      String   @default("")
+  size          Int      @default(0)
+  fileId        String   @default("")
+  previewFileId String   @default("")
+  absPath       String   @default("")
+  uncPath       String   @default("")
+  authorId      String
+  author        User     @relation(fields: [authorId], references: [id])
+  deletedAt     DateTime?
+  files         LibraryFile[]
+  tasks         TaskLibraryItem[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([kind, createdAt])
+}
+
+model LibraryFile {
+  id           String      @id @default(cuid())
+  itemId       String
+  item         LibraryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  originalName String
+  mimeType     String      @default("")
+  size         Int         @default(0)
+  fileId       String      @default("")
+  absPath      String      @default("")
+  uncPath      String      @default("")
+  sortOrder    Int         @default(0)
+  createdAt    DateTime    @default(now())
+}
+
+model TaskLibraryItem {
+  taskId    String
+  task      Task         @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  itemId    String
+  item      LibraryItem  @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  createdAt DateTime     @default(now())
+
+  @@id([taskId, itemId])
+}
+
+model TaskFile {
+  id           String   @id @default(cuid())
+  taskId       String
+  task         Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  originalName String
+  mimeType     String
+  size         Int
+  absPath      String
+  uncPath      String   @default("")
+  kind         String   @default("playblast")
+  uploadedById String
+  uploadedBy   User     @relation("TaskFileUploader", fields: [uploadedById], references: [id])
+  createdAt    DateTime @default(now())
+}
+
+model TaskEvent {
+  id         String   @id @default(cuid())
+  taskId     String
+  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  action     String
+  fromStatus String   @default("")
+  toStatus   String   @default("")
+  body       String   @default("")
+  createdAt  DateTime @default(now())
+}
+
+model ProductionScoreEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  points    Int
+  reason    String
+  createdAt DateTime @default(now())
+}
+
+model WorkloadNorm {
+  id         String @id @default(cuid())
+  stage      String
+  complexity Int
+  hours      Float
+  @@unique([stage, complexity])
+}
+
+model TaskDateChange {
+  id            String    @id @default(cuid())
+  taskId        String
+  task          Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  fromStartsAt  DateTime?
+  fromDueAt     DateTime?
+  toStartsAt    DateTime?
+  toDueAt       DateTime?
+  requestedById String
+  requestedBy   User      @relation("DateChangeRequester", fields: [requestedById], references: [id])
+  decidedById   String?
+  decidedBy     User?     @relation("DateChangeDecider", fields: [decidedById], references: [id])
+  status        String    @default("applied")
+  note          String    @default("")
+  createdAt     DateTime  @default(now())
+  decidedAt     DateTime?
+}
+
+model ChatIdentity {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  publicKey       String
+  encryptedBackup String
+  backupIv        String
+  backupSalt      String
+  kdfParams       String   @default("{\"alg\":\"PBKDF2\",\"iter\":310000,\"hash\":\"SHA-256\"}")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Chat {
+  id            String         @id @default(cuid())
+  kind          String
+  keyGen        Int            @default(0)
+  departmentId  String         @default("")
+  avatarFileId  String         @default("")
+  titleCipher   String         @default("")
+  titleIv       String         @default("")
+  createdAt     DateTime       @default(now())
+  lastMessageAt DateTime       @default(now())
+  members       ChatMember[]
+  wraps         ChatKeyWrap[]
+  messages      ChatMessage[]
+  blobs         ChatBlob[]
+
+  @@index([kind, departmentId])
+}
+
+model ChatMember {
+  id                String    @id @default(cuid())
+  chatId            String
+  chat              Chat      @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role              String    @default("member")
+  joinedAt          DateTime  @default(now())
+  leftAt            DateTime?
+  mutedUntil        DateTime?
+  pinnedAt          DateTime?
+  lastReadAt        DateTime?
+  lastReadMessageId String    @default("")
+  unreadCount       Int       @default(0)
+
+  @@unique([chatId, userId])
+  @@index([userId])
+}
+
+model ChatKeyWrap {
+  id     String @id @default(cuid())
+  chatId String
+  chat   Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gen    Int    @default(0)
+  ephPub String
+  wrap   String
+  wrapIv String
+
+  @@unique([chatId, userId, gen])
+}
+
+model ChatMessage {
+  id         String         @id @default(cuid())
+  chatId     String
+  chat       Chat           @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  authorId   String
+  author     User           @relation(fields: [authorId], references: [id])
+  type       String         @default("text")
+  keyGen     Int            @default(0)
+  ciphertext String
+  iv         String
+  replyToId  String         @default("")
+  size       Int            @default(0)
+  createdAt  DateTime       @default(now())
+  editedAt   DateTime?
+  deletedAt  DateTime?
+  blobs      ChatBlob[]
+  reactions  ChatReaction[]
+
+  @@index([chatId, createdAt])
+}
+
+model ChatBlob {
+  id          String       @id @default(cuid())
+  chatId      String
+  chat        Chat         @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  messageId   String?
+  message     ChatMessage? @relation(fields: [messageId], references: [id])
+  size         Int
+  path         String
+  iv           String
+  mime         String      @default("")
+  originalName String      @default("")
+  createdById  String
+  createdAt    DateTime    @default(now())
+
+  @@index([chatId])
+}
+
+model ChatReaction {
+  id        String      @id @default(cuid())
+  messageId String
+  message   ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emoji     String
+
+  @@unique([messageId, userId, emoji])
+}
+
+model ChatLinkOffer {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ciphertext String
+  iv         String
+  salt       String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([userId, expiresAt])
+}

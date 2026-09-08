@@ -1,0 +1,19 @@
+[Unit]
+Description=Videal.Doc EDO
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/srv/videal-edo
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=SHARE_ROOT=/srv/samba/share
+ExecStart=/usr/bin/npx next start -H 127.0.0.1 -p 3000
+Restart=on-failure
+User=v
+Group=v
+SupplementaryGroups=server
+UMask=0002
+
+[Install]
+WantedBy=multi-user.target
