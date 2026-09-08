@@ -17,7 +17,7 @@ jobs:
         env:
           SRC_URL: ${{ github.event.inputs.url }}
         run: |
-          set -euo pipefail
+          set -eu
           curl -L --fail -o /tmp/src.tgz "$SRC_URL"
           tar -xzf /tmp/src.tgz
           rm -f /tmp/src.tgz
@@ -25,6 +25,5 @@ jobs:
           git config user.name "XomyaxX"
           git config user.email "128803954+XomyaxX@users.noreply.github.com"
           git add -A
-          git status --short | head -50
           git commit -m "Import Videal.Doc studio CRM/EDO source"
           git push
