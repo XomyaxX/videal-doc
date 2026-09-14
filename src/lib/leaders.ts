@@ -4,6 +4,7 @@ export function isLeaderPosition(name: string | null | undefined) {
 }
 
 export function isLeaderRole(code: string | null | undefined, name?: string | null) {
+  if (code === "sublead") return false;
   const roleName = (name || "").toLocaleLowerCase("ru");
   return code === "manager" || roleName === "руководитель";
 }
@@ -12,6 +13,7 @@ export function isFundApprover(person: {
   position?: { name: string } | null;
   role?: { code: string; name?: string } | null;
 }) {
+  if (person.role?.code === "sublead") return false;
   return isLeaderPosition(person.position?.name) || isLeaderRole(person.role?.code, person.role?.name);
 }
 
@@ -19,6 +21,7 @@ export function isHrAddressee(person: {
   position?: { name: string } | null;
   role?: { code: string; name?: string } | null;
 }) {
+  if (person.role?.code === "sublead") return false;
   const pos = (person.position?.name || "").toLocaleLowerCase("ru");
   const role = person.role?.code || "";
   if (isFundApprover(person)) return true;

@@ -51,9 +51,9 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
       {doc.comment ? <p className="mb-4 rounded-xl bg-white px-4 py-3 text-muted">{doc.comment}</p> : null}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-        <Card className="overflow-hidden p-3">
+        <Card id="doc-viewer" className="overflow-hidden p-3">
           {file?.mimeType === "application/pdf" || file?.mimeType.startsWith("image/") ? (
-            <Viewer fileId={doc.originalFileId} docId={doc.id} />
+            <Viewer fileId={doc.originalFileId} />
           ) : (
             <div className="p-8 text-center">
               <p>Этот файл лучше открыть скачиванием.</p>
@@ -70,6 +70,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
               <div className="mt-3">
                 <DocActions
                   id={doc.id}
+                  fileId={doc.originalFileId}
                   requireAck={doc.requireAck}
                   requireSignedReturn={doc.requireSignedReturn}
                   requireApproval={doc.requireApproval}

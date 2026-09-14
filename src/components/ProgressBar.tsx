@@ -1,3 +1,4 @@
+import { pctBarClass } from "@/lib/prod";
 import { cn } from "./ui";
 
 export function ProgressBar({
@@ -12,7 +13,7 @@ export function ProgressBar({
   size?: "lg" | "md" | "sm";
 }) {
   const v = Math.max(0, Math.min(100, Math.round(value)));
-  const fill = v >= 80 ? "bg-[var(--ok)]" : v >= 35 ? "bg-gold" : "bg-navy-2";
+  const fill = pctBarClass(v);
   const h = size === "lg" ? "h-3" : size === "sm" ? "h-1.5" : "h-2.5";
   return (
     <div>

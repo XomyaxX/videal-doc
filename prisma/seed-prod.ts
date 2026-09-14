@@ -228,6 +228,7 @@ async function upsertTask(data: {
 }) {
   const existing = await prisma.task.findFirst({
     where: {
+      deletedAt: null,
       stage: data.stage,
       sceneId: data.sceneId || null,
       shotId: data.shotId || null,
@@ -246,7 +247,17 @@ async function upsertTask(data: {
     assigneeId: data.assigneeId || null,
   };
   if (existing) {
-    await prisma.task.update({ where: { id: existing.id }, data: payload });
+    await prisma.task.update({
+      where: { id: existing.id },
+      data: {
+        status: data.status,
+        comment: data.comment,
+        blockedReason: data.blockedReason,
+        sheetCode: data.sheetCode,
+        assigneeId: data.assigneeId || null,
+        ...(data.dueAt ? { dueAt: data.dueAt } : {}),
+      },
+    });
     return existing.id;
   }
   const created = await prisma.task.create({
@@ -403,6 +414,7 @@ async function import3d(sid: string, episodeId: string, byLogin: Record<string, 
       continue;
     }
     if (taskName === "Задача") continue;
+    if (/^персонажи и вариации/i.test(taskName)) continue;
     if (!taskName) continue;
 
     if (/^аркит/i.test(taskName)) {

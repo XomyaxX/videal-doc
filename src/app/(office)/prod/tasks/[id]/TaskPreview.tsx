@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { previewMode } from "@/lib/library-kinds";
+import { previewMode, type PreviewKind } from "@/lib/library-kinds";
 
 export type TaskFileChip = {
   id: string;
@@ -9,7 +9,7 @@ export type TaskFileChip = {
   mimeType: string;
 };
 
-function kindOf(file: TaskFileChip): "video" | "image" | "pdf" | "none" {
+function kindOf(file: TaskFileChip): PreviewKind {
   const mode = previewMode({ mimeType: file.mimeType, originalName: file.originalName });
   const ext = file.originalName.toLowerCase().slice(file.originalName.lastIndexOf("."));
   if (ext === ".mov" || ext === ".m4v") return "video";

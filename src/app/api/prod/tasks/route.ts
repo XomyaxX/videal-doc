@@ -57,6 +57,7 @@ export async function POST(req: NextRequest) {
       newAssetName: body?.newAssetName || undefined,
       newAssetKind: body?.newAssetKind || undefined,
       assigneeId: body?.assigneeId || null,
+      helperId: body?.helperId || null,
       startsAt: parseDay(body?.startsAt),
       dueAt: parseDay(body?.dueAt),
       comment: body?.comment || "",

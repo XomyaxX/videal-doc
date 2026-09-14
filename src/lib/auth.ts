@@ -13,6 +13,68 @@ export { userCan as can } from "./types";
 
 export const SESSION_COOKIE = "vd_session";
 export const DEVICE_COOKIE = "vd_device";
+export const TRUST_DAYS = 90;
+
+export async function deviceTrusted(userId: string, deviceId: string): Promise<boolean> {
+  if (!userId || !deviceId || deviceId.length < 16) return false;
+  const row = await prisma.trustedDevice.findUnique({
+    where: { userId_deviceId: { userId, deviceId } },
+  });
+  if (!row) return false;
+  if (row.expiresAt < new Date()) {
+    await prisma.trustedDevice.delete({ where: { id: row.id } }).catch(() => {});
+    return false;
+  }
+  return true;
+}
+
+export async function trustDevice(userId: string, deviceId: string, userAgent = "") {
+  if (!userId || !deviceId || deviceId.length < 16) return;
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + TRUST_DAYS * 24 * 60 * 60 * 1000);
+  await prisma.trustedDevice.upsert({
+    where: { userId_deviceId: { userId, deviceId } },
+    create: {
+      userId,
+      deviceId,
+      userAgent: userAgent.slice(0, 300),
+      lastUsedAt: now,
+      expiresAt,
+    },
+    update: {
+      userAgent: userAgent.slice(0, 300),
+      lastUsedAt: now,
+      expiresAt,
+    },
+  });
+}
+
+export async function forgetTrustedDevices(userId: string, deviceId?: string) {
+  if (deviceId) {
+    await prisma.trustedDevice.deleteMany({ where: { userId, deviceId } });
+    return;
+  }
+  await prisma.trustedDevice.deleteMany({ where: { userId } });
+}
+
+export async function complete2fa(opts: {
+  token: string;
+  userId: string;
+  deviceId: string;
+  userAgent?: string;
+  remember?: boolean;
+}) {
+  const row = await prisma.session.findUnique({
+    where: { token: opts.token },
+    select: { rememberDevice: true },
+  });
+  const remember = opts.remember ?? row?.rememberDevice ?? false;
+  await prisma.session.updateMany({
+    where: { token: opts.token },
+    data: { totpOk: true, rememberDevice: remember },
+  });
+  if (remember) await trustDevice(opts.userId, opts.deviceId, opts.userAgent || "");
+}
 
 function toUser(row: {
   id: string;
@@ -128,13 +190,23 @@ export async function createSession(
   userAgent: string,
   deviceId = "",
   totpOk = true,
+  rememberDevice = false,
 ) {
   const settings = await prisma.appSettings.findUnique({ where: { id: "default" } });
   const days = settings?.sessionDays || 30;
   const token = randomToken(32);
   const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
   await prisma.session.create({
-    data: { token, userId, ip, userAgent: userAgent.slice(0, 300), expiresAt, deviceId, totpOk },
+    data: {
+      token,
+      userId,
+      ip,
+      userAgent: userAgent.slice(0, 300),
+      expiresAt,
+      deviceId,
+      totpOk,
+      rememberDevice,
+    },
   });
   return token;
 }
@@ -145,6 +217,7 @@ export async function loginWithPassword(
   ip: string,
   userAgent: string,
   deviceId = "",
+  remember = false,
 ) {
   const user = await prisma.user.findFirst({
     where: { login: login.trim(), deletedAt: null },
@@ -153,8 +226,12 @@ export async function loginWithPassword(
   if (!user || user.status !== "active") return { error: "Неверный логин или пароль" as const };
   if (!verifyPassword(password, user.passwordHash)) return { error: "Неверный логин или пароль" as const };
   const mapped = toUser(user);
-  const token = await createSession(user.id, ip, userAgent, deviceId, !needs2fa(mapped));
-  mapped.totpOk = !needs2fa(mapped);
+  const privileged = needs2fa(mapped);
+  const trusted = privileged && (await deviceTrusted(user.id, deviceId));
+  const totpOk = !privileged || trusted;
+  const token = await createSession(user.id, ip, userAgent, deviceId, totpOk, remember);
+  mapped.totpOk = totpOk;
+  if (trusted) await trustDevice(user.id, deviceId, userAgent);
   return { token, user: mapped };
 }
 

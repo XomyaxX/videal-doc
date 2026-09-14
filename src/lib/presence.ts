@@ -10,6 +10,17 @@ export const MORNING_TO = 11 * 60;
 export const EVENING_FROM = 17 * 60;
 export const EVENING_TO = 19 * 60;
 
+export function isOfficeLanIp(ip: string) {
+  const m = ip.trim().match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!m) return false;
+  const a = Number(m[1]);
+  const b = Number(m[2]);
+  if (a === 192 && b === 168) return true;
+  if (a === 10 && b !== 8) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  return false;
+}
+
 export function requestClientIp(req: NextRequest) {
   const cf = req.headers.get("cf-connecting-ip")?.trim();
   if (cf) return cf;
@@ -17,6 +28,21 @@ export function requestClientIp(req: NextRequest) {
   if (real) return real;
   const fwd = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "";
   return fwd;
+}
+
+/** IP, как его видит офисный nginx, без Cloudflare. */
+export function requestLanIp(req: NextRequest) {
+  const parts = [
+    req.headers.get("x-real-ip") || "",
+    ...(req.headers.get("x-forwarded-for") || "").split(","),
+    req.headers.get("cf-connecting-ip") || "",
+  ]
+    .map((s) => s.trim())
+    .filter(Boolean);
+  for (const ip of parts) {
+    if (isOfficeLanIp(ip)) return ip;
+  }
+  return "";
 }
 
 function ipv4ToInt(ip: string) {
@@ -148,10 +174,10 @@ async function raiseFlag(opts: { userId: string; ymd: string; kind: string; minu
   });
 }
 
-export async function markIn(opts: { userId: string; ip: string; extraIps?: string[]; source: "manual" | "auto" }) {
+export async function markIn(opts: { userId: string; ip: string; extraIps?: string[]; source: "manual" | "auto" | "lan" }) {
   const clock = officeClock();
   const extra = opts.extraIps || [];
-  const onSite = await isOnSite(opts.ip, extra);
+  const onSite = opts.source === "lan" ? true : await isOnSite(opts.ip, extra);
   if (!onSite) {
     await prisma.attendanceEvent.create({
       data: { userId: opts.userId, ymd: clock.ymd, kind: "deny_in", ip: opts.ip, detail: opts.source },
@@ -195,7 +221,7 @@ export async function markIn(opts: { userId: string; ip: string; extraIps?: stri
   return { ok: true as const, day, already: false };
 }
 
-export async function markOut(opts: { userId: string; ip: string; extraIps?: string[]; source: "manual" | "auto" }) {
+export async function markOut(opts: { userId: string; ip: string; extraIps?: string[]; source: "manual" | "auto" | "lan" }) {
   const clock = officeClock();
   const extra = opts.extraIps || [];
   const onSite = await isOnSite(opts.ip, extra);
@@ -252,10 +278,11 @@ export async function presencePing(opts: { userId: string; ip: string; extraIps?
 
 export async function presenceSnapshot(userId: string, ip: string, extraIps: string[] = []) {
   const clock = officeClock();
-  const [onSite, leave, day] = await Promise.all([
+  const [onSite, leave, day, station] = await Promise.all([
     isOnSite(ip, extraIps),
     onApprovedLeave(userId, clock.ymd),
     prisma.attendanceDay.findUnique({ where: { userId_ymd: { userId, ymd: clock.ymd } } }),
+    prisma.officeStation.findFirst({ where: { userId }, orderBy: { lastSeenAt: "desc" } }),
   ]);
   const cidrs = await officeCidrs();
   return {
@@ -270,10 +297,18 @@ export async function presenceSnapshot(userId: string, ip: string, extraIps: str
     inAt: day?.inAt?.toISOString() || null,
     outAt: day?.outAt?.toISOString() || null,
     inSource: day?.inSource || "",
+    stationBound: Boolean(station),
+    stationMac: station?.mac || "",
   };
 }
 
 export async function tickPresence() {
+  try {
+    const { applyLanPresence } = await import("./office-lan");
+    await applyLanPresence();
+  } catch (e) {
+    console.error("lan-scan", e);
+  }
   const clock = officeClock();
   if (!clock.weekdayWork) return;
   const active = await prisma.user.findMany({

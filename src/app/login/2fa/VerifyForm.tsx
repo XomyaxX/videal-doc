@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button, Card, ErrorText, Field, Input } from "@/components/ui";
 import { safeNext } from "@/lib/origin";
+import { RememberCheck } from "../RememberCheck";
 
 function afterOk() {
   const next = safeNext(new URLSearchParams(window.location.search).get("next"));
@@ -18,9 +19,14 @@ export function VerifyForm({ preferDigits = false }: { preferDigits?: boolean })
   const [challengeId, setChallengeId] = useState("");
   const [expiresAt, setExpiresAt] = useState(0);
   const [left, setLeft] = useState(0);
+  const [remember, setRemember] = useState(true);
 
   async function loadQr() {
-    const res = await fetch("/api/auth/2fa/challenge", { method: "POST" });
+    const res = await fetch("/api/auth/2fa/challenge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ remember }),
+    });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       setError(data.error || "Не удалось показать квадрат");
@@ -63,7 +69,7 @@ export function VerifyForm({ preferDigits = false }: { preferDigits?: boolean })
     const res = await fetch("/api/auth/2fa/verify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code }),
+      body: JSON.stringify({ code, remember }),
     });
     const data = await res.json().catch(() => ({}));
     setBusy(false);
@@ -99,6 +105,19 @@ export function VerifyForm({ preferDigits = false }: { preferDigits?: boolean })
           <button type="button" className="mt-2 w-full text-center text-sm text-muted underline" onClick={() => setDigits(true)}>
             Ввести код вручную
           </button>
+          <div className="mt-4">
+            <RememberCheck
+              checked={remember}
+              onChange={(next) => {
+                setRemember(next);
+                void fetch("/api/auth/2fa/challenge", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ remember: next }),
+                });
+              }}
+            />
+          </div>
         </div>
       ) : (
         <form onSubmit={submit} className="mt-5 space-y-3">
@@ -112,6 +131,7 @@ export function VerifyForm({ preferDigits = false }: { preferDigits?: boolean })
               required
             />
           </Field>
+          <RememberCheck checked={remember} onChange={setRemember} />
           <Button type="submit" className="w-full" disabled={busy || code.length !== 6}>
             {busy ? "Проверяем…" : "Войти"}
           </Button>

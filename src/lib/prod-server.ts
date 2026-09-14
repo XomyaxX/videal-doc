@@ -4,28 +4,44 @@ import { prisma } from "./prisma";
 import { notify } from "./notify";
 import {
   ANIM_STAGES,
+  APPROVE_DENIED,
   MODEL_STAGES,
   STAGE_COMPLEXITY,
   STAGE_LABEL,
   WORK_STATUSES,
+  canApproveProdTask,
   canLeadProd,
   canManageProd,
   canSeeProdTask,
   canWorkTask,
+  isFullProdLead,
   scorePoints,
+  absFromDataPath,
   shareRoot,
   taskDiskDir,
   toUnc,
   type ProdStatus,
 } from "./prod";
+import { assertInside } from "./files";
 import type { SessionUser } from "./types";
 import type { Prisma } from "@prisma/client";
 import { currentEpisodeId, taskScopeKey } from "./current-episode";
 import { AI_WORK_STAGES, skillsForKindStage, userPipelineKinds } from "./prod-kinds";
 import { USER_SAFE_ORG_SELECT } from "./user-public";
 
+export const ASSIGNED_BY_SELECT = {
+  id: true,
+  lastName: true,
+  firstName: true,
+  middleName: true,
+  prodScope: true,
+  role: { select: { code: true } },
+} as const;
+
 export const taskInclude = {
   assignee: { select: USER_SAFE_ORG_SELECT },
+  helper: { select: USER_SAFE_ORG_SELECT },
+  assignedBy: { select: ASSIGNED_BY_SELECT },
   shot: true,
   scene: { include: { episode: true } },
   asset: { include: { episode: true } },
@@ -54,8 +70,9 @@ export function taskListWhere(
   scope: "mine" | "dept" | "all" = "mine",
 ): Prisma.TaskWhereInput {
   const work = { status: { in: [...WORK_STATUSES] }, deletedAt: null };
+  const mine = [{ assigneeId: user.id }, { helperId: user.id }];
   if (scope === "mine" || !canLeadProd(user)) {
-    return { ...work, assigneeId: user.id };
+    return { ...work, OR: mine };
   }
   if (scope === "all" || canManageProd(user) || user.prodScope === "studio") {
     return work;
@@ -71,7 +88,7 @@ export function taskListWhere(
     ...work,
     stage: { in: stages },
     OR: [
-      { assigneeId: user.id },
+      ...mine,
       { assignee: { departmentId: user.departmentId } },
       { assigneeId: null, episode: { show: { pipelineKind: { in: kinds } } } },
     ],
@@ -91,6 +108,7 @@ export async function createProdTask(opts: {
   newAssetName?: string;
   newAssetKind?: string;
   assigneeId?: string | null;
+  helperId?: string | null;
   startsAt?: Date | null;
   dueAt?: Date | null;
   comment?: string;
@@ -296,6 +314,8 @@ export async function createProdTask(opts: {
       shotId,
       assetId,
       assigneeId: opts.assigneeId || null,
+      helperId: opts.helperId && opts.helperId !== opts.assigneeId ? opts.helperId : null,
+      assignedById: opts.assigneeId || opts.helperId ? opts.user.id : null,
       startsAt: opts.startsAt || null,
       dueAt: opts.dueAt || null,
       diskDir,
@@ -312,14 +332,19 @@ export async function createProdTask(opts: {
       body: "создали задачу",
     },
   });
-  if (!opts.silent && opts.assigneeId && opts.assigneeId !== opts.user.id) {
-    await notify({
-      userId: opts.assigneeId,
-      title: "Вам назначили задачу",
-      body: `${STAGE_LABEL[opts.stage]}`,
-      link: `/prod/tasks/${task.id}`,
-      urgency: "normal",
-    });
+  if (!opts.silent) {
+    const crew = [opts.assigneeId, task.helperId].filter(
+      (id): id is string => Boolean(id) && id !== opts.user.id,
+    );
+    for (const userId of new Set(crew)) {
+      await notify({
+        userId,
+        title: userId === task.helperId && userId !== opts.assigneeId ? "Вас поставили суб-исполнителем" : "Вам назначили задачу",
+        body: `${STAGE_LABEL[opts.stage]}`,
+        link: `/prod/tasks/${task.id}`,
+        urgency: "normal",
+      });
+    }
   }
   return task;
 }
@@ -327,8 +352,8 @@ export async function createProdTask(opts: {
 export async function applyDates(opts: {
   user: SessionUser;
   taskId: string;
-  startsAt: Date | null;
-  dueAt: Date | null;
+  startsAt?: Date | null;
+  dueAt?: Date | null;
   note?: string;
 }) {
   const task = await prisma.task.findUnique({
@@ -338,9 +363,8 @@ export async function applyDates(opts: {
   if (!task) throw new Error("Задача не найдена");
   if (task.deletedAt) throw new Error("Задача удалена — сначала восстановите");
   assertLead(opts.user, task.stage, task.assignee?.department?.name);
-  if (opts.startsAt && opts.dueAt && opts.startsAt > opts.dueAt) {
-    throw new Error("Окончание не может быть раньше начала");
-  }
+  const startsAt = opts.startsAt === undefined ? task.startsAt : opts.startsAt;
+  const dueAt = opts.dueAt === undefined ? task.dueAt : opts.dueAt;
   const settings = await prisma.appSettings.findUnique({ where: { id: "default" } });
   const needApproval = Boolean((settings as { prodDatesNeedApproval?: boolean } | null)?.prodDatesNeedApproval);
   const status = needApproval ? "pending" : "applied";
@@ -349,8 +373,8 @@ export async function applyDates(opts: {
       taskId: task.id,
       fromStartsAt: task.startsAt,
       fromDueAt: task.dueAt,
-      toStartsAt: opts.startsAt,
-      toDueAt: opts.dueAt,
+      toStartsAt: startsAt,
+      toDueAt: dueAt,
       requestedById: opts.user.id,
       decidedById: needApproval ? null : opts.user.id,
       decidedAt: needApproval ? null : new Date(),
@@ -361,7 +385,7 @@ export async function applyDates(opts: {
   if (!needApproval) {
     await prisma.task.update({
       where: { id: task.id },
-      data: { startsAt: opts.startsAt, dueAt: opts.dueAt },
+      data: { dueAt },
     });
     await prisma.taskEvent.create({
       data: {
@@ -375,8 +399,8 @@ export async function applyDates(opts: {
   return { pending: needApproval };
 }
 
-export function assertWork(user: SessionUser, assigneeId: string | null) {
-  if (!canWorkTask(user, assigneeId)) throw new Error("Нет права на эту задачу");
+export function assertWork(user: SessionUser, assigneeId: string | null, helperId?: string | null) {
+  if (!canWorkTask(user, assigneeId, helperId)) throw new Error("Нет права на эту задачу");
 }
 
 export function assertLead(
@@ -401,21 +425,38 @@ export async function applyStatus(opts: {
   status: ProdStatus;
   comment?: string;
   assigneeId?: string | null;
+  helperId?: string | null;
   blockedReason?: string;
 }) {
   const task = await prisma.task.findUnique({
     where: { id: opts.taskId },
-    include: { assignee: { include: { department: true } } },
+    include: {
+      assignee: { include: { department: true } },
+      assignedBy: { select: ASSIGNED_BY_SELECT },
+    },
   });
   if (!task) throw new Error("Задача не найдена");
   if (task.deletedAt) throw new Error("Задача удалена — сначала восстановите");
 
   const lead = canLeadProd(opts.user, task.stage, task.assignee?.department?.name);
-  const work = canWorkTask(opts.user, task.assigneeId);
+  const work = canWorkTask(opts.user, task.assigneeId, task.helperId);
   if (!lead && !work) throw new Error("Нет права");
 
-  if (opts.status === "approved" || opts.status === "revise" || opts.assigneeId !== undefined) {
+  if (opts.status === "approved" || opts.status === "revise" || opts.assigneeId !== undefined || opts.helperId !== undefined) {
     if (!lead) throw new Error("Утверждать и назначать может только руководитель");
+  }
+  if (
+    (opts.status === "approved" || opts.status === "revise") &&
+    opts.status !== task.status &&
+    !canApproveProdTask(opts.user, {
+      stage: task.stage,
+      assigneeId: task.assigneeId,
+      helperId: task.helperId,
+      assignee: task.assignee,
+      assignedBy: task.assignedBy,
+    })
+  ) {
+    throw new Error(APPROVE_DENIED);
   }
   if (opts.status === "done" && task.kind !== "job") {
     const files = await prisma.taskFile.count({ where: { taskId: task.id } });
@@ -429,6 +470,8 @@ export async function applyStatus(opts: {
     comment: string;
     blockedReason: string;
     assigneeId: string | null;
+    helperId?: string | null;
+    assignedById?: string | null;
     assigneeLocked?: boolean;
     startsAt?: Date;
   } = {
@@ -436,8 +479,17 @@ export async function applyStatus(opts: {
     comment: opts.comment ?? task.comment,
     blockedReason: opts.blockedReason ?? task.blockedReason,
     assigneeId: opts.assigneeId === undefined ? task.assigneeId : opts.assigneeId,
+    helperId: opts.helperId === undefined ? task.helperId : opts.helperId,
   };
-  if (opts.assigneeId !== undefined && lead) next.assigneeLocked = true;
+  if (next.helperId && next.helperId === next.assigneeId) next.helperId = null;
+  if (opts.assigneeId !== undefined && lead) {
+    next.assigneeLocked = true;
+    if (isFullProdLead(opts.user)) {
+      next.assignedById = opts.user.id;
+    } else if (!task.assignedBy || !isFullProdLead(task.assignedBy)) {
+      next.assignedById = opts.user.id;
+    }
+  }
   if (opts.status === "wip" && !task.startsAt) next.startsAt = new Date();
 
   await prisma.task.update({ where: { id: task.id }, data: next });
@@ -488,15 +540,46 @@ export async function applyStatus(opts: {
     }
   }
 
-  if (task.assigneeId && task.assigneeId !== opts.user.id) {
+  const crew = new Set(
+    [task.assigneeId, task.helperId, next.assigneeId, next.helperId].filter(
+      (id): id is string => Boolean(id) && id !== opts.user.id,
+    ),
+  );
+  for (const userId of crew) {
+    const helperOnly = userId === (next.helperId ?? task.helperId) && userId !== (next.assigneeId ?? task.assigneeId);
     await notify({
-      userId: task.assigneeId,
-      title: `Производство: ${STATUS_SAFE[opts.status] || opts.status}`,
+      userId,
+      title: helperOnly && opts.helperId !== undefined && opts.status === task.status
+        ? "Вас поставили суб-исполнителем"
+        : `Производство: ${STATUS_SAFE[opts.status] || opts.status}`,
       body: opts.comment || "",
       link: `/prod/tasks/${task.id}`,
       urgency: "normal",
     });
   }
+}
+
+export async function setTaskDiskDir(opts: { user: SessionUser; taskId: string; input: string }) {
+  const task = await prisma.task.findUnique({
+    where: { id: opts.taskId },
+    include: { assignee: { include: { department: true } } },
+  });
+  if (!task) throw new Error("Задача не найдена");
+  if (task.deletedAt) throw new Error("Задача удалена — сначала восстановите");
+  const lead = canLeadProd(opts.user, task.stage, task.assignee?.department?.name);
+  const work = canWorkTask(opts.user, task.assigneeId, task.helperId);
+  if (!lead && !work) throw new Error("Нет права");
+  const abs = assertInside(shareRoot(), absFromDataPath(opts.input));
+  if (abs === task.diskDir) return;
+  await prisma.task.update({ where: { id: task.id }, data: { diskDir: abs } });
+  await prisma.taskEvent.create({
+    data: {
+      taskId: task.id,
+      userId: opts.user.id,
+      action: "disk",
+      body: toUnc(abs),
+    },
+  });
 }
 
 const ALLOWED_EXT = new Set([".mp4", ".webm", ".mov", ".png", ".jpg", ".jpeg", ".webp", ".pdf", ".gif"]);
@@ -521,7 +604,7 @@ export async function saveProdFile(opts: {
   });
   if (!task) throw new Error("Задача не найдена");
   if (task.deletedAt) throw new Error("Задача удалена — сначала восстановите");
-  if (!canWorkTask(opts.user, task.assigneeId) && !canLeadProd(opts.user, task.stage, task.assignee?.department?.name)) {
+  if (!canWorkTask(opts.user, task.assigneeId, task.helperId) && !canLeadProd(opts.user, task.stage, task.assignee?.department?.name)) {
     throw new Error("Нет права прикреплять файл");
   }
   if (opts.buffer.length > opts.maxBytes) throw new Error("Файл слишком большой");
@@ -573,14 +656,16 @@ export async function hideProdTask(opts: { user: SessionUser; taskId: string }) 
   await prisma.taskEvent.create({
     data: { taskId: task.id, userId: opts.user.id, action: "hide", body: "убрали задачу" },
   });
-  if (task.assigneeId && task.assigneeId !== opts.user.id) {
-    await notify({
-      userId: task.assigneeId,
-      title: "Задачу убрали",
-      body: STAGE_LABEL[task.stage] || task.stage,
-      link: `/prod/tasks/${task.id}`,
-      urgency: "normal",
-    });
+  for (const userId of [task.assigneeId, task.helperId]) {
+    if (userId && userId !== opts.user.id) {
+      await notify({
+        userId,
+        title: "Задачу убрали",
+        body: STAGE_LABEL[task.stage] || task.stage,
+        link: `/prod/tasks/${task.id}`,
+        urgency: "normal",
+      });
+    }
   }
 }
 
@@ -596,14 +681,16 @@ export async function restoreProdTask(opts: { user: SessionUser; taskId: string 
   await prisma.taskEvent.create({
     data: { taskId: task.id, userId: opts.user.id, action: "restore", body: "восстановили задачу" },
   });
-  if (task.assigneeId && task.assigneeId !== opts.user.id) {
-    await notify({
-      userId: task.assigneeId,
-      title: "Задачу вернули",
-      body: STAGE_LABEL[task.stage] || task.stage,
-      link: `/prod/tasks/${task.id}`,
-      urgency: "normal",
-    });
+  for (const userId of [task.assigneeId, task.helperId]) {
+    if (userId && userId !== opts.user.id) {
+      await notify({
+        userId,
+        title: "Задачу вернули",
+        body: STAGE_LABEL[task.stage] || task.stage,
+        link: `/prod/tasks/${task.id}`,
+        urgency: "normal",
+      });
+    }
   }
 }
 
@@ -618,7 +705,7 @@ export async function addTaskComment(opts: { user: SessionUser; taskId: string; 
   if (task.deletedAt) throw new Error("Задача удалена — сначала восстановите");
   if (!canSeeProdTask(opts.user, task)) throw new Error("Нет права");
   const lead = canLeadProd(opts.user, task.stage, task.assignee?.department?.name);
-  if (!canWorkTask(opts.user, task.assigneeId) && !lead) {
+  if (!canWorkTask(opts.user, task.assigneeId, task.helperId) && !lead) {
     throw new Error("Нет права комментировать");
   }
   const row = await prisma.taskEvent.create({
@@ -629,14 +716,16 @@ export async function addTaskComment(opts: { user: SessionUser; taskId: string; 
       body: text,
     },
   });
-  if (task.assigneeId && task.assigneeId !== opts.user.id) {
-    await notify({
-      userId: task.assigneeId,
-      title: "Комментарий к задаче",
-      body: text.slice(0, 160),
-      link: `/prod/tasks/${task.id}`,
-      urgency: "normal",
-    });
+  for (const userId of [task.assigneeId, task.helperId]) {
+    if (userId && userId !== opts.user.id) {
+      await notify({
+        userId,
+        title: "Комментарий к задаче",
+        body: text.slice(0, 160),
+        link: `/prod/tasks/${task.id}`,
+        urgency: "normal",
+      });
+    }
   }
   return row;
 }

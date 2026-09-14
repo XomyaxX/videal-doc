@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { type ButtonHTMLAttributes, type CSSProperties, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
+import { useId, type ButtonHTMLAttributes, type CSSProperties, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
 
 export function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -25,9 +25,19 @@ export function PageHeader({
   );
 }
 
-export function Card({ children, className, style }: { children: ReactNode; className?: string; style?: CSSProperties }) {
+export function Card({
+  children,
+  className,
+  style,
+  id,
+}: {
+  children: ReactNode;
+  className?: string;
+  style?: CSSProperties;
+  id?: string;
+}) {
   return (
-    <div className={cn("rounded-2xl border border-line bg-card p-5 shadow-[var(--shadow)]", className)} style={style}>
+    <div id={id} className={cn("scroll-mt-6 rounded-2xl border border-line bg-card p-5 shadow-[var(--shadow)]", className)} style={style}>
       {children}
     </div>
   );
@@ -47,7 +57,7 @@ export function Button({ variant = "primary", className, href, children, ...prop
     danger: "bg-bad !text-white hover:brightness-110",
   };
   const cls = cn(
-    "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[15px] font-semibold transition disabled:opacity-50",
+    "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[15px] font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:cursor-not-allowed disabled:opacity-70",
     styles[variant],
     className,
   );
@@ -87,15 +97,24 @@ const fieldCls =
   "w-full rounded-xl border border-line bg-white px-3 py-2.5 text-[15px] outline-none focus:border-gold";
 
 export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} className={cn(fieldCls, props.className)} />;
+  const uid = useId();
+  const id = props.id ?? uid;
+  const name = props.name ?? id;
+  return <input {...props} id={id} name={name} className={cn(fieldCls, props.className)} />;
 }
 
 export function Textarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea {...props} className={cn(fieldCls, "min-h-[96px]", props.className)} />;
+  const uid = useId();
+  const id = props.id ?? uid;
+  const name = props.name ?? id;
+  return <textarea {...props} id={id} name={name} className={cn(fieldCls, "min-h-[96px]", props.className)} />;
 }
 
 export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...props} className={cn(fieldCls, props.className)} />;
+  const uid = useId();
+  const id = props.id ?? uid;
+  const name = props.name ?? id;
+  return <select {...props} id={id} name={name} className={cn(fieldCls, props.className)} />;
 }
 
 export function Empty({ title, text }: { title: string; text?: string }) {

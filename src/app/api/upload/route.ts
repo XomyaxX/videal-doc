@@ -12,7 +12,9 @@ export async function POST(req: NextRequest) {
     userCan(session.user, "finance.create") ||
     userCan(session.user, "hrdocs.create") ||
     userCan(session.user, "scan.use") ||
-    userCan(session.user, "prod.work");
+    userCan(session.user, "prod.work") ||
+    userCan(session.user, "requests.create") ||
+    userCan(session.user, "requests.aho");
   if (!allowed) return NextResponse.json({ error: "Нет права загружать" }, { status: 403 });
   const settings = await prisma.appSettings.findUnique({ where: { id: "default" } });
   const maxBytes = (settings?.maxUploadMb || 32) * 1024 * 1024;

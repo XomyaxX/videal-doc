@@ -10,19 +10,41 @@ import { currentEpisodeId } from "@/lib/current-episode";
 import { EpisodePicker } from "./EpisodePicker";
 import { BreakdownBoard, EmptyEpisodeStart, type TaskChip } from "./BreakdownBoard";
 
+const taskChipInclude = {
+  assignee: { select: { id: true, lastName: true, firstName: true, middleName: true } },
+  shot: { select: { code: true } },
+  scene: { select: { code: true, title: true } },
+  asset: { select: { name: true } },
+};
+
 function chip(t: {
   id: string;
+  kind: string;
   stage: string;
   status: string;
+  title: string;
+  dueAt: Date | null;
+  blockedReason: string;
   assigneeId: string | null;
   assignee: { lastName: string; firstName: string; middleName: string | null } | null;
+  shot: { code: string } | null;
+  scene: { code: string; title: string } | null;
+  asset: { name: string } | null;
 }): TaskChip {
   return {
     id: t.id,
+    kind: t.kind,
     stage: t.stage,
     status: t.status,
+    title: t.title,
+    dueAt: t.dueAt ? t.dueAt.toISOString() : null,
+    blockedReason: t.blockedReason,
     assigneeId: t.assigneeId,
     assigneeName: t.assignee ? fullName(t.assignee) : null,
+    shotCode: t.shot?.code || null,
+    sceneCode: t.scene?.code || null,
+    sceneTitle: t.scene?.title || null,
+    assetName: t.asset?.name || null,
   };
 }
 
@@ -55,15 +77,15 @@ export default async function ProdPipelinePage() {
         where: { id: epId },
         include: {
           show: true,
-          tasks: { where: { kind: "episode", deletedAt: null }, include: { assignee: { select: { id: true, lastName: true, firstName: true, middleName: true } } } },
+          tasks: { where: { kind: "episode", deletedAt: null }, include: taskChipInclude },
           scenes: {
             orderBy: { sortOrder: "asc" },
             include: {
-              shots: { orderBy: { sortOrder: "asc" }, include: { tasks: { where: { deletedAt: null }, include: { assignee: { select: { id: true, lastName: true, firstName: true, middleName: true } } } } } },
-              tasks: { where: { deletedAt: null }, include: { assignee: { select: { id: true, lastName: true, firstName: true, middleName: true } } } },
+              shots: { orderBy: { sortOrder: "asc" }, include: { tasks: { where: { deletedAt: null }, include: taskChipInclude } } },
+              tasks: { where: { deletedAt: null }, include: taskChipInclude },
             },
           },
-          assets: { orderBy: { sortOrder: "asc" }, include: { tasks: { where: { deletedAt: null }, include: { assignee: { select: { id: true, lastName: true, firstName: true, middleName: true } } } } } },
+          assets: { orderBy: { sortOrder: "asc" }, include: { tasks: { where: { deletedAt: null }, include: taskChipInclude } } },
         },
       })
     : null;
@@ -135,6 +157,10 @@ export default async function ProdPipelinePage() {
           scenesPct: progress.scenesPct,
           assetsPct: progress.assetsPct,
           preprodPct: progress.preprodPct,
+          scenesShare: progress.scenesShare,
+          assetsShare: progress.assetsShare,
+          preprodShare: progress.preprodShare,
+          slices: progress.slices,
           tasks: episode.tasks.map(chip),
           scenes: episode.scenes.map((scene) => ({
             id: scene.id,

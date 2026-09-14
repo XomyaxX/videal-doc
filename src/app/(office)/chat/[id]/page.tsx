@@ -1,5 +1,6 @@
 import { requireUser } from "@/lib/auth";
 import { canHoldChatKey } from "@/lib/chat-server";
+import { canLeadProd, isFullProdLead } from "@/lib/prod";
 import { ChatApp } from "../ChatApp";
 
 export default async function ChatIdPage({ params }: { params: Promise<{ id: string }> }) {
@@ -16,6 +17,8 @@ export default async function ChatIdPage({ params }: { params: Promise<{ id: str
       }}
       chatId={id}
       isAdmin={canHoldChatKey(user)}
+      canLead={canLeadProd(user)}
+      canAward={isFullProdLead(user)}
     />
   );
 }

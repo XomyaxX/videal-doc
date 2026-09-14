@@ -6,7 +6,7 @@ export default async function NewRequestPage() {
   await requirePermission("requests.create");
   return (
     <div>
-      <PageHeader title="Новый запрос" subtitle="АХО сами посчитают сумму и срок. Приложите ссылки и скрины." />
+      <PageHeader title="Новый запрос" subtitle="АХО сами посчитают сумму и срок. Можно приложить несколько фото и документов — перетащите в поле." />
       <RequestForm />
     </div>
   );

@@ -2,11 +2,22 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Check, CheckCheck, ImagePlus, Mic, Paperclip, Pin, Plus, Search, Send, Smile, Users, VolumeX } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, Check, CheckCheck, Forward, ImagePlus, Paperclip, Pencil, Pin, Plus, Reply, Search, Send, Users, VolumeX, X } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
 import { Button, ErrorText, Input } from "@/components/ui";
-import { previewText, type ChatPayload } from "@/lib/chat-types";
+import { previewText, type ChatAskDto, type ChatPayload, type ChatPollDto, type ChatTaskDto } from "@/lib/chat-types";
+import { CHAT_EMOJI, LEAD_EMOJI, messageMatchesQuery } from "@/lib/chat-emoji";
+import { dayKey, dayLabel, splitMessageText } from "@/lib/chat-media";
+import { filesFromClipboard } from "@/lib/clipboard-files";
+import { uploadChunkedFile } from "@/lib/meet-upload";
+import { AskCard, PollCard, TaskCard } from "./ChatCards";
+import { ChatMedia, PhotoLightbox } from "./ChatMedia";
+import { ChatPlus } from "./ChatPlus";
+import { VoicePlayer } from "./VoicePlayer";
+import { VoiceRecorder } from "./VoiceRecorder";
+import { GlbPreview, ModelPreview } from "@/components/ModelPreview";
+import { isModel3dName, needsGlbPreview, previewMode } from "@/lib/library-kinds";
 
 type Person = {
   id: string;
@@ -53,9 +64,12 @@ type Msg = {
   payload: ChatPayload | null;
   blobs: { id: string; size: number; mime: string; originalName: string }[];
   reactions: { userId: string; emoji: string }[];
+  poll?: ChatPollDto;
+  ask?: ChatAskDto;
+  task?: ChatTaskDto;
 };
 
-const EMOJI = ["👍", "❤️", "😂", "😮", "😢", "🔥", "👏", "✅"];
+const EMOJI = [...CHAT_EMOJI];
 
 function formatLastSeen(iso: string | null): string {
   if (!iso) return "";
@@ -99,10 +113,14 @@ export function ChatApp({
   me,
   chatId,
   isAdmin,
+  canLead,
+  canAward,
 }: {
   me: { id: string; lastName: string; firstName: string; photoFileId: string; fullName: string };
   chatId?: string;
   isAdmin?: boolean;
+  canLead?: boolean;
+  canAward?: boolean;
 }) {
   const router = useRouter();
   const [inbox, setInbox] = useState<InboxChat[]>([]);
@@ -254,7 +272,7 @@ export function ChatApp({
       </aside>
       <section className={`min-h-0 min-w-0 flex-1 flex-col ${chatId ? "flex" : "hidden md:flex"}`}>
         {chatId ? (
-          <Thread me={me} chatId={chatId} inbox={inbox} onChanged={() => void refreshInbox()} />
+          <Thread me={me} chatId={chatId} inbox={inbox} canLead={canLead} canAward={canAward} onChanged={() => void refreshInbox()} />
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-sm text-muted">
             <p>Выберите чат слева или напишите коллеге</p>
@@ -388,11 +406,15 @@ function Thread({
   me,
   chatId,
   inbox,
+  canLead,
+  canAward,
   onChanged,
 }: {
   me: { id: string; lastName: string; firstName: string; photoFileId: string };
   chatId: string;
   inbox: InboxChat[];
+  canLead?: boolean;
+  canAward?: boolean;
   onChanged: () => void;
 }) {
   const [chat, setChat] = useState<InboxChat | null>(inbox.find((c) => c.id === chatId) || null);
@@ -402,16 +424,23 @@ function Thread({
   const [reply, setReply] = useState<Msg | null>(null);
   const [info, setInfo] = useState(false);
   const [fwd, setFwd] = useState<ChatPayload | null>(null);
-  const [reactFor, setReactFor] = useState<string | null>(null);
+  const [edit, setEdit] = useState<Msg | null>(null);
+  const [msgMenu, setMsgMenu] = useState<{ msg: Msg; x: number; y: number } | null>(null);
+  const [plusOpen, setPlusOpen] = useState(false);
+  const holdTimer = useRef<number | null>(null);
   const [mentionIds, setMentionIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  const [recOn, setRecOn] = useState(false);
-  const recRef = useRef<MediaRecorder | null>(null);
-  const recChunks = useRef<Blob[]>([]);
-  const recStarted = useRef(0);
+  const [voiceOn, setVoiceOn] = useState(false);
+  const [photo, setPhoto] = useState<{ src: string; alt: string; kind?: "image" | "model3d" } | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [flashId, setFlashId] = useState("");
+  const [pending, setPending] = useState<{ id: string; file: File; url: string }[]>([]);
+  const [upload, setUpload] = useState<{ pct: number; phase: "upload" | "convert"; name: string } | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  const rowsRef = useRef<Msg[]>([]);
   const [localQ, setLocalQ] = useState("");
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -452,13 +481,42 @@ function Thread({
   }, [chatId, loadChat, loadMsgs]);
 
   useEffect(() => {
+    return () => {
+      setPending((prev) => {
+        for (const p of prev) if (p.url) URL.revokeObjectURL(p.url);
+        return [];
+      });
+    };
+  }, [chatId]);
+
+  useEffect(() => {
     if (body) localStorage.setItem(`vd-chat-draft-${chatId}`, body);
     else localStorage.removeItem(`vd-chat-draft-${chatId}`);
   }, [chatId, body]);
 
   useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
+
+  useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });
   }, [rows.length]);
+
+  useLayoutEffect(() => {
+    const el = taRef.current;
+    if (!el) return;
+    el.style.height = "0px";
+    el.style.height = `${Math.min(Math.max(el.scrollHeight, 44), 192)}px`;
+  }, [body, voiceOn]);
+
+  useEffect(() => {
+    if (!msgMenu) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setMsgMenu(null);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [msgMenu]);
 
   useEffect(() => {
     const last = rows[rows.length - 1];
@@ -474,6 +532,84 @@ function Thread({
   const headerTitle = chat ? otherName(chat, me.id) : "Чат";
   const other = chat?.members.find((m) => m.id !== me.id);
   const canWrite = chat?.canWrite !== false && !chat?.adminView;
+
+  function patchRow(id: string, part: Partial<Msg>) {
+    setRows((prev) => prev.map((m) => (m.id === id ? { ...m, ...part } : m)));
+  }
+
+  function groupedReactions(list: Msg["reactions"]) {
+    const map = new Map<string, { emoji: string; count: number; me: boolean }>();
+    for (const r of list) {
+      const cur = map.get(r.emoji) || { emoji: r.emoji, count: 0, me: false };
+      cur.count += 1;
+      if (r.userId === me.id) cur.me = true;
+      map.set(r.emoji, cur);
+    }
+    return [...map.values()];
+  }
+
+  async function toggleReact(mid: string, emoji: string) {
+    await fetch(`/api/chat/${chatId}/messages/${mid}/reactions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ emoji }),
+    });
+    setMsgMenu(null);
+    void loadMsgs();
+  }
+
+  function canEditMsg(m: Msg) {
+    return (
+      m.authorId === me.id &&
+      !m.deletedAt &&
+      m.payload?.t === "text" &&
+      Date.now() - new Date(m.createdAt).getTime() < 15 * 60 * 1000
+    );
+  }
+
+  function openMsgMenu(clientX: number, clientY: number, m: Msg) {
+    if (m.deletedAt || !canWrite) return;
+    const w = 280;
+    const h = 380;
+    const pad = 8;
+    let x = clientX;
+    let y = clientY;
+    if (x + w > window.innerWidth - pad) x = Math.max(pad, window.innerWidth - w - pad);
+    if (y + h > window.innerHeight - pad) y = Math.max(pad, window.innerHeight - h - pad);
+    setMsgMenu({ msg: m, x, y });
+  }
+
+  function menuFromEvent(e: { clientX: number; clientY: number; target: EventTarget | null }, m: Msg) {
+    const el = e.target as HTMLElement | null;
+    if (el?.closest("button, a, input, textarea, label, select")) return;
+    openMsgMenu(e.clientX, e.clientY, m);
+  }
+
+  function scrollToMsg(id: string) {
+    const el = document.getElementById(`msg-${id}`);
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setFlashId(id);
+    window.setTimeout(() => setFlashId((cur) => (cur === id ? "" : cur)), 1600);
+  }
+
+  async function jumpToMsg(id: string) {
+    setInfo(false);
+    if (rowsRef.current.some((m) => m.id === id)) {
+      requestAnimationFrame(() => scrollToMsg(id));
+      return;
+    }
+    const res = await fetch(`/api/chat/${chatId}/messages?around=${id}`);
+    const data = await res.json().catch(() => ({}));
+    const extra: Msg[] = data.messages || [];
+    if (extra.length) {
+      setRows((prev) => {
+        const map = new Map(prev.map((m) => [m.id, m]));
+        for (const m of extra) map.set(m.id, m);
+        return [...map.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      });
+    }
+    requestAnimationFrame(() => scrollToMsg(id));
+  }
 
   async function send(payload: { type: string; text?: string; files?: ChatPayload["files"]; voice?: ChatPayload["voice"]; blobIds?: string[] }) {
     const res = await fetch(`/api/chat/${chatId}/messages`, {
@@ -511,88 +647,157 @@ function Thread({
     setLoadingMore(false);
   }
 
-  async function sendText(e?: React.FormEvent) {
-    e?.preventDefault();
-    if (busy || !body.trim()) return;
-    setBusy(true);
-    setErr("");
-    try {
-      await send({ type: "text", text: body.trim() });
-      setBody("");
-    } catch (er) {
-      setErr(er instanceof Error ? er.message : "Ошибка");
-    }
-    setBusy(false);
+  function queueFiles(list: FileList | File[]) {
+    const incoming = Array.from(list).filter((f) => f.size > 0);
+    if (!incoming.length) return;
+    setPending((prev) => [
+      ...prev,
+      ...incoming.map((file, i) => ({
+        id: `${Date.now()}-${prev.length + i}-${file.name}`,
+        file,
+        url: file.type.startsWith("image/") ? URL.createObjectURL(file) : "",
+      })),
+    ]);
   }
 
-  async function sendFiles(list: FileList | File[]) {
+  function dropPending(id: string) {
+    setPending((prev) => {
+      const hit = prev.find((p) => p.id === id);
+      if (hit?.url) URL.revokeObjectURL(hit.url);
+      return prev.filter((p) => p.id !== id);
+    });
+  }
+
+  function clearPending() {
+    setPending((prev) => {
+      for (const p of prev) if (p.url) URL.revokeObjectURL(p.url);
+      return [];
+    });
+  }
+
+  async function sendText(e?: React.FormEvent) {
+    e?.preventDefault();
+    if (busy) return;
+    if (edit) {
+      if (!body.trim()) return;
+      setBusy(true);
+      setErr("");
+      try {
+        const res = await fetch(`/api/chat/${chatId}/messages/${edit.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: body.trim() }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Не удалось править");
+        setEdit(null);
+        setBody("");
+        void loadMsgs();
+      } catch (er) {
+        setErr(er instanceof Error ? er.message : "Ошибка");
+      }
+      setBusy(false);
+      return;
+    }
+    if (!body.trim() && !pending.length) return;
     setBusy(true);
+    setErr("");
+    setUpload({ pct: 0, phase: "upload", name: pending[0]?.file.name || "" });
     try {
       const files: NonNullable<ChatPayload["files"]> = [];
       const ids: string[] = [];
-      for (const f of Array.from(list)) {
-        const fd = new FormData();
-        fd.set("file", f, f.name);
-        const res = await fetch(`/api/chat/${chatId}/blobs`, { method: "POST", body: fd });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || "Файл не ушёл");
-        files.push({ blobId: data.id, name: f.name, mime: f.type || "application/octet-stream", size: f.size });
-        ids.push(data.id);
+      for (const p of pending) {
+        const data = await uploadChunkedFile(`/api/chat/${chatId}/blobs`, p.file, setUpload);
+        if (!data.id) throw new Error("Файл не ушёл");
+        files.push({
+          blobId: String(data.id),
+          name: p.file.name,
+          mime: p.file.type || "application/octet-stream",
+          size: p.file.size,
+          previewBlobId: data.previewId ? String(data.previewId) : undefined,
+        });
+        ids.push(String(data.id));
       }
-      await send({ type: "file", files, blobIds: ids });
+      await send({
+        type: files.length ? "file" : "text",
+        text: body.trim() || undefined,
+        files: files.length ? files : undefined,
+        blobIds: ids.length ? ids : undefined,
+      });
+      setBody("");
+      clearPending();
+    } catch (er) {
+      setErr(er instanceof Error ? er.message : "Ошибка");
+    }
+    setUpload(null);
+    setBusy(false);
+  }
+
+  async function sendVoice(take: { blob: Blob; mime: string; durationMs: number; text: string }) {
+    setBusy(true);
+    setErr("");
+    try {
+      const ext = (take.mime || "").includes("mp4") ? "m4a" : "webm";
+      const fd = new FormData();
+      fd.set("file", new File([take.blob], `voice.${ext}`, { type: take.mime || "audio/webm" }));
+      const res = await fetch(`/api/chat/${chatId}/blobs`, { method: "POST", body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Голос не ушёл");
+      await send({
+        type: "voice",
+        voice: {
+          blobId: data.id,
+          mime: take.mime || "audio/webm",
+          durationMs: take.durationMs,
+          text: take.text || undefined,
+        },
+        blobIds: [data.id],
+      });
     } catch (er) {
       setErr(er instanceof Error ? er.message : "Ошибка");
     }
     setBusy(false);
   }
 
-  async function toggleRec() {
-    if (recOn) {
-      recRef.current?.stop();
-      setRecOn(false);
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const rec = new MediaRecorder(stream);
-      recChunks.current = [];
-      recStarted.current = Date.now();
-      rec.ondataavailable = (ev) => {
-        if (ev.data.size) recChunks.current.push(ev.data);
-      };
-      rec.onstop = () => {
-        stream.getTracks().forEach((t) => t.stop());
-        const blob = new Blob(recChunks.current, { type: rec.mimeType || "audio/webm" });
-        const dur = Date.now() - recStarted.current;
-        void (async () => {
-          const fd = new FormData();
-          fd.set("file", new File([blob], "voice.webm", { type: blob.type }));
-          const res = await fetch(`/api/chat/${chatId}/blobs`, { method: "POST", body: fd });
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok) return;
-          await send({
-            type: "voice",
-            voice: { blobId: data.id, mime: blob.type, durationMs: dur },
-            blobIds: [data.id],
-          });
-        })();
-      };
-      recRef.current = rec;
-      rec.start();
-      setRecOn(true);
-    } catch {
-      setErr("Нет доступа к микрофону");
-    }
+  const visible = rows.filter((m) => !hidden.has(m.id)).filter((m) => messageMatchesQuery(m, localQ));
+  const dragDepth = useRef(0);
+
+  function fileDrag(e: React.DragEvent) {
+    return [...e.dataTransfer.types].includes("Files");
   }
 
-  const visible = rows.filter((m) => !hidden.has(m.id)).filter((m) => {
-    const s = localQ.trim().toLowerCase();
-    if (!s) return true;
-    return (m.payload?.text || "").toLowerCase().includes(s) || m.authorName.toLowerCase().includes(s);
-  });
-
   return (
-    <>
+    <div
+      className="relative flex min-h-0 flex-1 flex-col"
+      onDragEnter={(e) => {
+        if (!canWrite || !fileDrag(e)) return;
+        e.preventDefault();
+        dragDepth.current += 1;
+        setDragOver(true);
+      }}
+      onDragOver={(e) => {
+        if (!canWrite || !fileDrag(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+      }}
+      onDragLeave={() => {
+        dragDepth.current = Math.max(0, dragDepth.current - 1);
+        if (dragDepth.current === 0) setDragOver(false);
+      }}
+      onDrop={(e) => {
+        if (!canWrite) return;
+        e.preventDefault();
+        dragDepth.current = 0;
+        setDragOver(false);
+        const files = filesFromClipboard(e.dataTransfer);
+        if (files.length) queueFiles(files);
+      }}
+    >
+      {canWrite && dragOver ? (
+        <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center rounded-none border-2 border-dashed border-gold bg-gold/15">
+          <p className="rounded-xl bg-white px-4 py-2 font-semibold text-navy">Отпустите, чтобы прикрепить</p>
+        </div>
+      ) : null}
       <header className="flex items-center gap-2 border-b border-line bg-card px-3 py-2">
         <Link href="/chat" className="rounded-xl p-2 hover:bg-paper md:hidden" aria-label="Назад">
           <ArrowLeft size={18} />
@@ -602,9 +807,11 @@ function Thread({
             <GroupFace avatarFileId={chat.avatarFileId} title={headerTitle} size={40} />
           </button>
         ) : (
-          <Avatar photoFileId={other?.photoFileId} lastName={other?.lastName || "?"} firstName={other?.firstName || "?"} size={40} />
+          <button type="button" onClick={() => setInfo(true)}>
+            <Avatar photoFileId={other?.photoFileId} lastName={other?.lastName || "?"} firstName={other?.firstName || "?"} size={40} />
+          </button>
         )}
-        <button type="button" className="min-w-0 flex-1 text-left" onClick={() => chat && chat.kind !== "direct" && setInfo(true)}>
+        <button type="button" className="min-w-0 flex-1 text-left" onClick={() => chat && setInfo(true)}>
           <span className="block truncate font-semibold text-navy">{headerTitle}</span>
           <span className="block truncate text-xs text-muted">
             {chat?.adminView
@@ -656,7 +863,7 @@ function Thread({
         <input
           value={localQ}
           onChange={(e) => setLocalQ(e.target.value)}
-          placeholder="Найти в этой переписке"
+          placeholder="Поиск: слова, фамилия или эмодзи (кубок, золото…)"
           className="w-full rounded-xl border border-line bg-white px-3 py-1.5 text-xs"
         />
       </div>
@@ -672,140 +879,296 @@ function Thread({
             {loadingMore ? "Загружаем…" : "Ещё раньше"}
           </button>
         ) : null}
-        {visible.map((m) => {
+        {visible.map((m, i) => {
           const mine = m.authorId === me.id;
           const p = m.payload;
           const readAt = chat?.kind === "direct" ? other?.lastReadAt : null;
           const read = Boolean(mine && readAt && new Date(readAt) >= new Date(m.createdAt));
+          const quoted = !m.deletedAt && (m.replyToId || p?.replyTo) ? rows.find((r) => r.id === (m.replyToId || p?.replyTo)) : null;
+          const reacts = groupedReactions(m.reactions);
+          const prev = visible[i - 1];
+          const showDay = !prev || dayKey(prev.createdAt) !== dayKey(m.createdAt);
           return (
-            <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[85%] rounded-xl px-3 py-2 ${mine ? "bg-paper" : "border border-line bg-white"}`}>
-                {!mine && chat?.kind === "group" ? (
+            <div key={m.id}>
+            {showDay ? (
+              <p className="my-2 text-center text-[11px] font-semibold text-muted">{dayLabel(m.createdAt)}</p>
+            ) : null}
+            <div id={`msg-${m.id}`} className={`relative flex ${mine ? "justify-end" : "justify-start"}`}>
+              <div
+                className={`${p?.files?.length || p?.voice ? "w-[min(85%,20rem)]" : "max-w-[85%]"} rounded-2xl px-3 py-2 ${mine ? "bg-paper" : "border border-line bg-white"} ${flashId === m.id ? "ring-2 ring-gold" : ""}`}
+                onContextMenu={(e) => {
+                  if (m.deletedAt || !canWrite) return;
+                  e.preventDefault();
+                  menuFromEvent(e, m);
+                }}
+                onTouchStart={(e) => {
+                  if (m.deletedAt || !canWrite) return;
+                  const t = e.touches[0];
+                  if (holdTimer.current) window.clearTimeout(holdTimer.current);
+                  holdTimer.current = window.setTimeout(() => openMsgMenu(t.clientX, t.clientY, m), 450);
+                }}
+                onTouchMove={() => {
+                  if (holdTimer.current) {
+                    window.clearTimeout(holdTimer.current);
+                    holdTimer.current = null;
+                  }
+                }}
+                onTouchEnd={() => {
+                  if (holdTimer.current) {
+                    window.clearTimeout(holdTimer.current);
+                    holdTimer.current = null;
+                  }
+                }}
+              >
+                {!mine && chat?.kind !== "direct" ? (
                   <div className="mb-1 flex items-center gap-2 text-xs font-semibold text-navy">
                     <Avatar photoFileId={m.photoFileId} lastName={m.lastName} firstName={m.firstName} size={18} />
                     {m.authorName}
                   </div>
                 ) : null}
+                {quoted ? (
+                  <button
+                    type="button"
+                    className="mb-1 w-full rounded-lg border-l-2 border-gold bg-white/70 px-2 py-1 text-left"
+                    onClick={() => scrollToMsg(quoted.id)}
+                  >
+                    <span className="block text-[11px] font-semibold text-gold">{quoted.authorName}</span>
+                    <span className="block truncate text-xs text-muted">
+                      {quoted.payload?.text || quoted.payload?.voice?.text || quoted.poll?.question || quoted.ask?.title || quoted.task?.title || (quoted.payload?.t === "voice" ? "Голосовое" : "сообщение")}
+                    </span>
+                  </button>
+                ) : null}
                 {m.deletedAt ? (
                   <p className="text-sm italic text-muted">Сообщение удалено</p>
+                ) : m.poll ? (
+                  <PollCard chatId={chatId} poll={m.poll} meId={me.id} onUpdate={(poll) => patchRow(m.id, { poll })} />
+                ) : m.ask ? (
+                  <AskCard chatId={chatId} ask={m.ask} meId={me.id} onUpdate={(ask) => patchRow(m.id, { ask })} />
+                ) : m.task ? (
+                  <TaskCard chatId={chatId} task={m.task} meId={me.id} onUpdate={(task) => patchRow(m.id, { task })} />
                 ) : p ? (
-                  <PayloadView payload={p} rows={rows} />
+                  <PayloadView payload={p} onOpenPhoto={setPhoto} />
                 ) : (
                   <p className="text-sm text-muted">Не удалось прочитать</p>
                 )}
-                <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-muted">
+                {reacts.length ? (
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {reacts.map((r) => (
+                      <button
+                        key={r.emoji}
+                        type="button"
+                        disabled={!canWrite}
+                        onClick={() => void toggleReact(m.id, r.emoji)}
+                        className={`rounded-full px-1.5 py-0.5 text-xs ${
+                          r.me ? "bg-gold/20 ring-1 ring-gold" : "bg-white"
+                        }`}
+                      >
+                        {r.emoji} {r.count > 1 ? r.count : ""}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="mt-1 flex items-center gap-1 text-[11px] text-muted">
                   <span>
                     {shortTime(m.createdAt)}
                     {m.editedAt ? " · прав." : ""}
                   </span>
                   {mine ? read ? <CheckCheck size={12} /> : <Check size={12} /> : null}
-                  {m.reactions.map((r) => (
-                    <span key={r.userId + r.emoji} className="rounded-full bg-white px-1">
-                      {r.emoji}
-                    </span>
-                  ))}
-                  {!m.deletedAt && canWrite ? (
-                    <>
-                      <button type="button" className="underline" onClick={() => setReply(m)}>
-                        ответ
-                      </button>
-                      {mine ? (
-                        <button
-                          type="button"
-                          className="underline"
-                          onClick={async () => {
-                            if (!confirm("Удалить у всех?")) return;
-                            await fetch(`/api/chat/${chatId}/messages/${m.id}`, {
-                              method: "PATCH",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ delete: true }),
-                            });
-                            void loadMsgs();
-                          }}
-                        >
-                          удалить
-                        </button>
-                      ) : null}
-                      {mine && p?.t === "text" && Date.now() - new Date(m.createdAt).getTime() < 15 * 60 * 1000 ? (
-                        <button
-                          type="button"
-                          className="underline"
-                          onClick={async () => {
-                            const next = window.prompt("Текст", p.text || "");
-                            if (next == null) return;
-                            await fetch(`/api/chat/${chatId}/messages/${m.id}`, {
-                              method: "PATCH",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ text: next }),
-                            });
-                            void loadMsgs();
-                          }}
-                        >
-                          править
-                        </button>
-                      ) : null}
-                      {p ? (
-                        <button type="button" className="underline" onClick={() => setFwd(p)}>
-                          переслать
-                        </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        className="underline"
-                        onClick={() => {
-                          setHidden((prev) => {
-                            const n = new Set(prev);
-                            n.add(m.id);
-                            localStorage.setItem(hiddenKey(chatId), JSON.stringify([...n]));
-                            return n;
-                          });
-                        }}
-                      >
-                        скрыть
-                      </button>
-                      <button type="button" className="rounded p-0.5 hover:bg-paper" onClick={() => setReactFor(reactFor === m.id ? null : m.id)}>
-                        <Smile size={12} />
-                      </button>
-                      {reactFor === m.id
-                        ? EMOJI.map((e) => (
-                            <button
-                              key={e}
-                              type="button"
-                              onClick={() =>
-                                void fetch(`/api/chat/${chatId}/messages/${m.id}/reactions`, {
-                                  method: "POST",
-                                  headers: { "Content-Type": "application/json" },
-                                  body: JSON.stringify({ emoji: e }),
-                                }).then(() => {
-                                  setReactFor(null);
-                                  void loadMsgs();
-                                })
-                              }
-                            >
-                              {e}
-                            </button>
-                          ))
-                        : null}
-                    </>
-                  ) : null}
                 </div>
               </div>
+            </div>
             </div>
           );
         })}
         <div ref={bottom} />
       </div>
-      {reply ? (
-        <div className="flex items-center gap-2 border-t border-line bg-white px-3 py-1 text-xs text-muted">
-          Ответ: {(reply.payload?.text || "сообщение").slice(0, 60)}
-          <button type="button" onClick={() => setReply(null)}>
+      {msgMenu ? (
+        <div className="fixed inset-0 z-[70]" onClick={() => setMsgMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMsgMenu(null); }}>
+          <div
+            className="absolute w-[min(18rem,calc(100vw-1rem))] overflow-hidden rounded-2xl border border-line bg-card shadow-[var(--shadow)]"
+            style={{ left: msgMenu.x, top: msgMenu.y }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex flex-wrap justify-center gap-1 border-b border-line px-2 py-2">
+              {EMOJI.map((e) => (
+                <button
+                  key={e}
+                  type="button"
+                  className="rounded-full px-1.5 py-1 text-lg hover:bg-paper"
+                  onClick={() => void toggleReact(msgMenu.msg.id, e)}
+                >
+                  {e}
+                </button>
+              ))}
+            </div>
+            {canAward ? (
+              <div className="border-b border-line px-2 py-2">
+                <p className="mb-1 text-center text-[11px] font-semibold text-gold">Награды руководителя</p>
+                <div className="flex flex-wrap justify-center gap-1">
+                  {LEAD_EMOJI.map((e) => (
+                    <button
+                      key={e}
+                      type="button"
+                      title={e === "🏆" ? "Кубок" : e === "🎆" ? "Фейерверк" : e === "🎁" ? "Подарок" : e === "🥇" ? "Золото" : e === "🥈" ? "Серебро" : "Бронза"}
+                      className="rounded-full px-1.5 py-1 text-lg hover:bg-[#fff8ec]"
+                      onClick={() => void toggleReact(msgMenu.msg.id, e)}
+                    >
+                      {e}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-paper"
+              onClick={() => {
+                setEdit(null);
+                setReply(msgMenu.msg);
+                setMsgMenu(null);
+              }}
+            >
+              <Reply size={16} /> Ответить
+            </button>
+            {msgMenu.msg.payload ? (
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-paper"
+                onClick={() => {
+                  setFwd(msgMenu.msg.payload);
+                  setMsgMenu(null);
+                }}
+              >
+                <Forward size={16} /> Переслать
+              </button>
+            ) : null}
+            {canEditMsg(msgMenu.msg) ? (
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-paper"
+                onClick={() => {
+                  setReply(null);
+                  setEdit(msgMenu.msg);
+                  setBody(msgMenu.msg.payload?.text || "");
+                  setMsgMenu(null);
+                }}
+              >
+                <Pencil size={16} /> Изменить
+              </button>
+            ) : null}
+            {msgMenu.msg.authorId === me.id ? (
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-bad hover:bg-paper"
+                onClick={async () => {
+                  setMsgMenu(null);
+                  if (!confirm("Удалить у всех?")) return;
+                  await fetch(`/api/chat/${chatId}/messages/${msgMenu.msg.id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ delete: true }),
+                  });
+                  void loadMsgs();
+                }}
+              >
+                Удалить
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-muted hover:bg-paper"
+              onClick={() => {
+                setHidden((prev) => {
+                  const n = new Set(prev);
+                  n.add(msgMenu.msg.id);
+                  localStorage.setItem(hiddenKey(chatId), JSON.stringify([...n]));
+                  return n;
+                });
+                setMsgMenu(null);
+              }}
+            >
+              Скрыть у себя
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {edit ? (
+        <div className="flex items-center gap-2 border-t border-line bg-white px-3 py-2">
+          <Pencil size={16} className="shrink-0 text-gold" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold text-gold">Редактирование</p>
+            <p className="truncate text-xs text-muted">{edit.payload?.text || "сообщение"}</p>
+          </div>
+          <button
+            type="button"
+            className="text-muted"
+            onClick={() => {
+              setEdit(null);
+              setBody("");
+            }}
+          >
+            ×
+          </button>
+        </div>
+      ) : null}
+      {reply && !edit ? (
+        <div className="flex items-center gap-2 border-t border-line bg-white px-3 py-2">
+          <span className="h-10 w-1 shrink-0 rounded-full bg-gold" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold text-gold">Ответ · {reply.authorName}</p>
+            <p className="truncate text-xs text-muted">
+              {reply.payload?.text || reply.payload?.voice?.text || reply.poll?.question || reply.ask?.title || reply.task?.title || (reply.payload?.t === "voice" ? "Голосовое" : "сообщение")}
+            </p>
+          </div>
+          <button type="button" className="text-muted" onClick={() => setReply(null)}>
             ×
           </button>
         </div>
       ) : null}
       {canWrite ? (
-        <form className="border-t border-line bg-card p-3" onSubmit={(e) => void sendText(e)}>
+        <form
+          className="relative border-t border-line bg-card p-3"
+          onSubmit={(e) => void sendText(e)}
+          onPaste={(e) => {
+            const files = filesFromClipboard(e.clipboardData);
+            if (!files.length) return;
+            e.preventDefault();
+            queueFiles(files);
+          }}
+        >
           <ErrorText>{err}</ErrorText>
+          {upload ? (
+            <div className="mb-2">
+              <p className="mb-1 text-[11px] text-muted">
+                {upload.phase === "convert" ? `Конвертация 3D: ${upload.name}` : `Загрузка ${upload.name} — ${upload.pct}%`}
+              </p>
+              <div className="h-2 overflow-hidden rounded-full bg-paper">
+                <div className="h-full bg-gold transition-all" style={{ width: `${upload.phase === "convert" ? 100 : upload.pct}%` }} />
+              </div>
+            </div>
+          ) : null}
+          {pending.length ? (
+            <ul className="mb-2 flex flex-wrap gap-2">
+              {pending.map((p) => (
+                <li key={p.id} className="relative">
+                  {p.url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={p.url} alt={p.file.name} className="h-16 w-16 rounded-lg object-cover" />
+                  ) : (
+                    <span className="flex h-16 max-w-[9rem] items-center rounded-lg bg-paper px-2 text-[11px] text-navy">{p.file.name}</span>
+                  )}
+                  <button
+                    type="button"
+                    className="absolute -right-1 -top-1 rounded-full bg-navy p-0.5 text-white"
+                    title="Убрать"
+                    onClick={() => dropPending(p.id)}
+                  >
+                    <X size={12} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
           {(() => {
             const at = body.match(/@([^\s@]*)$/);
             if (!at || !chat) return null;
@@ -835,54 +1198,94 @@ function Thread({
             );
           })()}
           <div className="flex items-end gap-2">
-            <label className="rounded-xl p-2 hover:bg-paper" title="Файл">
-              <Paperclip size={18} />
-              <input
-                type="file"
-                multiple
-                className="sr-only"
-                onChange={(e) => {
-                  if (e.target.files) void sendFiles(e.target.files);
-                  e.target.value = "";
+            {!edit && !voiceOn ? (
+              <button type="button" className="rounded-xl p-2 hover:bg-paper" title="Голосование, сбор, задача" onClick={() => setPlusOpen(true)}>
+                <Plus size={18} />
+              </button>
+            ) : null}
+            {!edit && !voiceOn ? (
+              <>
+                <label className="rounded-xl p-2 hover:bg-paper" title="Файл">
+                  <Paperclip size={18} />
+                  <input
+                    type="file"
+                    multiple
+                    className="sr-only"
+                    onChange={(e) => {
+                      if (e.target.files) queueFiles(e.target.files);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+                <label className="rounded-xl p-2 hover:bg-paper" title="Фото">
+                  <ImagePlus size={18} />
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="sr-only"
+                    onChange={(e) => {
+                      if (e.target.files) queueFiles(e.target.files);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+              </>
+            ) : null}
+            {voiceOn ? null : (
+              <textarea
+                ref={taRef}
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                onPaste={(e) => {
+                  const files = filesFromClipboard(e.clipboardData);
+                  if (!files.length) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  queueFiles(files);
                 }}
-              />
-            </label>
-            <label className="rounded-xl p-2 hover:bg-paper" title="Фото">
-              <ImagePlus size={18} />
-              <input
-                type="file"
-                accept="image/*"
-                className="sr-only"
-                onChange={(e) => {
-                  if (e.target.files) void sendFiles(e.target.files);
-                  e.target.value = "";
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
+                  e.preventDefault();
+                  if (!busy) void sendText();
                 }}
+                placeholder={edit ? "Измените сообщение" : "Сообщение. @фамилия — тег, тогда человеку придёт пуш"}
+                rows={1}
+                className="min-h-[44px] max-h-48 flex-1 resize-none overflow-y-auto rounded-xl border border-line bg-white px-3 py-2"
               />
-            </label>
-            <textarea
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
-                e.preventDefault();
-                if (!busy) void sendText();
-              }}
-              placeholder="Сообщение. @фамилия — тег, тогда человеку придёт пуш"
-              rows={1}
-              className="min-h-[44px] max-h-32 flex-1 resize-none rounded-xl border border-line bg-white px-3 py-2"
-            />
-            <button type="button" className={`rounded-xl p-2 ${recOn ? "bg-bad text-white" : "hover:bg-paper"}`} title="Голос" onClick={() => void toggleRec()}>
-              <Mic size={18} />
-            </button>
-            <button type="submit" disabled={busy} className="rounded-xl bg-navy p-2 text-white" title="Отправить">
-              <Send size={18} />
-            </button>
+            )}
+            {!edit ? (
+              <VoiceRecorder
+                disabled={busy}
+                hideMic={Boolean(body.trim() || pending.length)}
+                onSend={(take) => void sendVoice(take)}
+                onError={setErr}
+                onActive={setVoiceOn}
+              />
+            ) : null}
+            {edit || body.trim() || pending.length ? (
+              <button type="submit" disabled={busy} className="rounded-xl bg-navy p-2 text-white" title="Отправить">
+                <Send size={18} />
+              </button>
+            ) : null}
           </div>
-          <p className="mt-1 text-[11px] text-muted">Enter — отправить. Пуш только если человека тегнули через @</p>
+          <p className="mt-1 text-[11px] text-muted">Enter — отправить. Shift+Enter — новая строка. Голос — зажать микрофон.</p>
         </form>
       ) : (
         <p className="border-t border-line bg-card px-3 py-3 text-sm text-muted">Просмотр. Писать может участник чата.</p>
       )}
+      {plusOpen && chat ? (
+        <ChatPlus
+          chatId={chatId}
+          members={chat.members.map((m) => ({ id: m.id, fullName: m.fullName }))}
+          meId={me.id}
+          canProd={canLead}
+          onClose={() => setPlusOpen(false)}
+          onCreated={() => {
+            void loadMsgs();
+            onChanged();
+          }}
+        />
+      ) : null}
       {fwd ? (
         <div className="fixed inset-0 z-50 flex items-end bg-navy/40 md:items-center md:justify-center">
           <div className="max-h-[70vh] w-full max-w-md overflow-auto rounded-t-3xl bg-card p-4 md:rounded-2xl">
@@ -942,67 +1345,107 @@ function Thread({
           </div>
         </div>
       ) : null}
-      {info && chat && chat.kind !== "direct" ? (
+      {info && chat ? (
         <GroupInfo
           chat={chat}
           meId={me.id}
           onClose={() => setInfo(false)}
+          onJump={(id) => void jumpToMsg(id)}
           onChanged={() => {
             void loadChat();
             onChanged();
           }}
         />
       ) : null}
-    </>
+      {photo ? <PhotoLightbox src={photo.src} alt={photo.alt} kind={photo.kind} onClose={() => setPhoto(null)} /> : null}
+    </div>
   );
 }
 
-function PayloadView({ payload, rows }: { payload: ChatPayload; rows: Msg[] }) {
+function PayloadView({
+  payload,
+  onOpenPhoto,
+}: {
+  payload: ChatPayload;
+  onOpenPhoto: (photo: { src: string; alt: string; kind?: "image" | "model3d" }) => void;
+}) {
   if (payload.t === "system") {
     return <p className="text-center text-xs italic text-muted">{previewText(payload)}</p>;
   }
-  const quoted = payload.replyTo ? rows.find((r) => r.id === payload.replyTo)?.payload : null;
   return (
     <div>
-      {payload.replyTo ? (
-        <p className="mb-1 border-l-2 border-gold pl-2 text-xs text-muted">{quoted?.text?.slice(0, 80) || "ответ"}</p>
-      ) : null}
       {payload.text ? (
         <p className="whitespace-pre-wrap text-sm">
-          {payload.text.split(/(@\S+)/g).map((part, i) =>
-            part.startsWith("@") ? (
+          {splitMessageText(payload.text).map((part, i) =>
+            part.t === "url" ? (
+              <a key={i} href={part.href} target="_blank" rel="noreferrer" className="break-all font-semibold text-navy underline">
+                {part.value}
+              </a>
+            ) : part.t === "mention" ? (
               <span key={i} className="font-semibold text-gold">
-                {part}
+                {part.value}
               </span>
             ) : (
-              <span key={i}>{part}</span>
+              <span key={i}>{part.value}</span>
             ),
           )}
         </p>
       ) : null}
       {payload.files?.map((f) => {
         const url = `/api/chat/blobs/${f.blobId}`;
-        if (f.mime.startsWith("image/")) {
+        const mode = f.previewBlobId || isModel3dName(f.name, f.mime) ? "model3d" : previewMode({ mimeType: f.mime, originalName: f.name });
+        if (mode === "image" || f.mime.startsWith("image/")) {
           return (
-            <a key={f.blobId} href={url} target="_blank" rel="noreferrer">
+            <button
+              key={f.blobId}
+              type="button"
+              className="mt-2 block w-full overflow-hidden rounded-xl"
+              onClick={() => onOpenPhoto({ src: url, alt: f.name, kind: "image" })}
+            >
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={url} alt={f.name} className="mt-2 max-h-56 rounded-lg object-contain" />
-            </a>
+              <img src={url} alt={f.name} className="block max-h-80 w-full object-contain" />
+            </button>
           );
         }
-        if (f.mime.startsWith("video/")) {
-          return <video key={f.blobId} src={url} controls className="mt-2 max-h-56 w-full rounded-lg bg-black" />;
+        if (mode === "video" || f.mime.startsWith("video/")) {
+          return <video key={f.blobId} src={url} controls className="mt-2 max-h-80 w-full rounded-xl bg-black" />;
+        }
+        if (mode === "model3d") {
+          return (
+            <div key={f.blobId} className="relative mt-2 overflow-hidden rounded-xl">
+              {needsGlbPreview(f.name) || f.previewBlobId ? (
+                <GlbPreview src={`${url}?preview=1`} compact />
+              ) : (
+                <ModelPreview src={url} compact />
+              )}
+              <button
+                type="button"
+                className="absolute right-2 top-2 rounded-lg bg-navy/80 px-2 py-1 text-[11px] font-semibold text-white"
+                onClick={() =>
+                  onOpenPhoto({
+                    src: needsGlbPreview(f.name) || f.previewBlobId ? `${url}?preview=1` : url,
+                    alt: f.name,
+                    kind: "model3d",
+                  })
+                }
+              >
+                На весь экран
+              </button>
+              <a href={url} download={f.name} className="absolute bottom-2 left-2 rounded-lg bg-navy/80 px-2 py-1 text-[11px] font-semibold text-white">
+                Скачать оригинал
+              </a>
+            </div>
+          );
         }
         return (
-          <a key={f.blobId} href={url} className="mt-2 inline-block text-sm font-semibold text-navy underline">
+          <a key={f.blobId} href={url} download={f.name} className="mt-2 inline-block text-sm font-semibold text-navy underline">
             {f.name}
           </a>
         );
       })}
       {payload.voice ? (
         <div className="mt-1">
-          <audio src={`/api/chat/blobs/${payload.voice.blobId}`} controls className="w-full" />
-          <p className="text-[11px] text-muted">{Math.round(payload.voice.durationMs / 1000)} сек</p>
+          <VoicePlayer src={`/api/chat/blobs/${payload.voice.blobId}`} durationMs={payload.voice.durationMs} text={payload.voice.text} />
         </div>
       ) : null}
     </div>
@@ -1014,15 +1457,19 @@ function GroupInfo({
   meId,
   onClose,
   onChanged,
+  onJump,
 }: {
   chat: InboxChat;
   meId: string;
   onClose: () => void;
   onChanged: () => void;
+  onJump: (messageId: string) => void;
 }) {
   const official = chat.kind === "studio" || chat.kind === "dept" || chat.official;
+  const direct = chat.kind === "direct";
+  const other = chat.members.find((m) => m.id !== meId);
   const admin =
-    !official && ((chat.role === "owner" || chat.role === "admin") || Boolean(chat.adminView));
+    !direct && !official && ((chat.role === "owner" || chat.role === "admin") || Boolean(chat.adminView));
   const [people, setPeople] = useState<Person[]>([]);
   const [name, setName] = useState(chat.title || "");
   const [err, setErr] = useState("");
@@ -1031,13 +1478,17 @@ function GroupInfo({
     <div className="fixed inset-0 z-50 flex items-end bg-navy/40 md:items-center md:justify-center">
       <div className="max-h-[90vh] w-full max-w-lg overflow-auto rounded-t-3xl bg-card p-4 md:rounded-2xl">
         <div className="mb-3 flex items-center justify-between">
-          <p className="font-serif text-xl text-navy">Беседа</p>
+          <p className="font-serif text-xl text-navy">{direct ? "Диалог" : "Беседа"}</p>
           <button type="button" onClick={onClose} className="text-sm text-muted">
             Закрыть
           </button>
         </div>
         <div className="flex items-center gap-3">
-          <GroupFace avatarFileId={chat.avatarFileId} title={chat.title || "Группа"} />
+          {direct && other ? (
+            <Avatar photoFileId={other.photoFileId} lastName={other.lastName} firstName={other.firstName} size={56} />
+          ) : (
+            <GroupFace avatarFileId={chat.avatarFileId} title={chat.title || "Группа"} />
+          )}
           {admin ? (
             <label className="text-sm font-semibold text-navy underline">
               Фото группы
@@ -1077,8 +1528,9 @@ function GroupInfo({
             </Button>
           </div>
         ) : (
-          <p className="mt-3 font-semibold text-navy">{chat.title}</p>
+          <p className="mt-3 font-semibold text-navy">{direct ? other?.fullName || "Диалог" : chat.title}</p>
         )}
+        {direct ? <p className="text-xs text-muted">{formatLastSeen(other?.lastSeenAt || null)}</p> : null}
         {official ? (
           <p className="mt-2 text-sm text-muted">
             {chat.kind === "studio"
@@ -1086,7 +1538,8 @@ function GroupInfo({
               : "Чат отдела. Кто в этом отделе — тот здесь. Выйти нельзя. Пуш от руководства приходит даже если чат без звука."}
           </p>
         ) : null}
-        <p className="mt-4 text-sm font-semibold text-navy">Участники</p>
+        {direct ? null : <p className="mt-4 text-sm font-semibold text-navy">Участники</p>}
+        {direct ? null : (
         <ul className="mt-2 space-y-2">
           {chat.members.map((m) => (
             <li key={m.id} className="flex items-center gap-2">
@@ -1113,6 +1566,7 @@ function GroupInfo({
             </li>
           ))}
         </ul>
+        )}
         {admin ? (
           <div className="mt-4">
             <Button
@@ -1149,7 +1603,7 @@ function GroupInfo({
             </ul>
           </div>
         ) : null}
-        {!chat.adminView && !official ? (
+        {!direct && !chat.adminView && !official ? (
           <Button
             className="mt-4"
             variant="danger"
@@ -1166,6 +1620,7 @@ function GroupInfo({
             Выйти
           </Button>
         ) : null}
+        <ChatMedia chatId={chat.id} onJump={onJump} />
         <ErrorText>{err}</ErrorText>
       </div>
     </div>

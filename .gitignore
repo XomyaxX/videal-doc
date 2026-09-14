@@ -45,6 +45,14 @@ yarn-error.log*
 GROK-HANDOFF.md
 deploy/askpass.cmd
 deploy/cloudflared-config.yml
+deploy/remote-*.sh
+deploy/debug-*.sh
+deploy/probe-*.sh
+deploy/fix-blender-numpy.sh
+deploy/install-blender42.sh
+deploy/*.py
+prisma/add-babkina.ts
+prisma/upsert-sublead.ts
 
 # vercel
 .vercel

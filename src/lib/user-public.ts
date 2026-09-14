@@ -5,6 +5,7 @@ export const USER_SAFE_SELECT = {
   lastName: true,
   firstName: true,
   middleName: true,
+  gender: true,
   photoFileId: true,
   phone: true,
   email: true,

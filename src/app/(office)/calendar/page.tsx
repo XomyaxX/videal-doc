@@ -65,6 +65,24 @@ export default async function CalendarPage() {
     });
   }
 
+  const meetings = await prisma.meeting.findMany({
+    where: {
+      deletedAt: null,
+      status: { not: "cancelled" },
+      OR: [{ authorId: user.id }, { participants: { some: { userId: user.id } } }],
+    },
+    select: { id: true, title: true, startsAt: true },
+    take: 80,
+  });
+  for (const m of meetings) {
+    overlays.push({
+      ymd: officeYmd(m.startsAt),
+      label: `Совещание · ${m.title}`,
+      href: `/meet/${m.id}`,
+      tone: "gold",
+    });
+  }
+
   return (
     <div>
       <PageHeader

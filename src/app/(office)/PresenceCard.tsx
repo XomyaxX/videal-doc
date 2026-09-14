@@ -14,6 +14,8 @@ type Snap = {
   inAt: string | null;
   outAt: string | null;
   inSource: string;
+  stationBound?: boolean;
+  stationMac?: string;
 };
 
 function clock(iso: string | null) {
@@ -25,6 +27,7 @@ export function PresenceCard() {
   const [snap, setSnap] = useState<Snap | null>(null);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
 
   const load = useCallback(async () => {
     const lan = await collectOfficeHints();
@@ -62,6 +65,25 @@ export function PresenceCard() {
     await load();
   }
 
+  async function pinPc() {
+    setBusy(true);
+    setMsg("");
+    const localIps = await collectOfficeHints();
+    const res = await fetch("/api/presence/pin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ localIps }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (!res.ok) {
+      setMsg(data.error || "Не удалось закрепить ПК");
+      return;
+    }
+    setMsg("Этот компьютер закреплён за вами");
+    await load();
+  }
+
   if (!snap || snap.leave) return null;
   if (!snap.weekdayWork && !snap.inAt) return null;
 
@@ -70,36 +92,64 @@ export function PresenceCard() {
   const highlight = (needIn && snap.morningWindow) || (needOut && snap.eveningWindow);
   if (!needIn && !needOut && !snap.inAt) return null;
 
+  const canMark = snap.officeConfigured && snap.onSite;
+  const whyOff = !snap.officeConfigured
+    ? "Админ ещё не указал офисную сеть — отметиться пока нельзя."
+    : !snap.onSite
+      ? "Отметить приход и уход можно только из офиса, с Wi‑Fi студии."
+      : "";
+  const summary = needIn
+    ? "Ещё не отметили приход"
+    : needOut
+      ? `На работе с ${clock(snap.inAt)}`
+      : `Сегодня: приход ${clock(snap.inAt)}${snap.outAt ? ` · уход ${clock(snap.outAt)}` : ""}`;
+
   return (
-    <Card className={highlight ? "mb-6 border-gold" : "mb-6"}>
-      <h2 className="font-serif text-2xl text-navy">
-        {needIn ? "На работе?" : needOut ? "Уход" : "Сегодня"}
-      </h2>
-      {snap.inAt ? (
-        <p className="mt-1 text-sm text-muted">
-          Приход {clock(snap.inAt)}
-          {snap.inSource === "auto" ? " · сами" : ""}
-          {snap.outAt ? ` · уход ${clock(snap.outAt)}` : ""}
-        </p>
+    <Card className={highlight ? "border-gold" : undefined}>
+      <button
+        type="button"
+        className="flex w-full items-center justify-between gap-3 text-left"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <div>
+          <div className="text-sm font-semibold text-navy">Уход</div>
+          <p className="text-sm text-muted">{summary}</p>
+        </div>
+        <span className="text-xs font-semibold text-gold">{open ? "свернуть" : "открыть"}</span>
+      </button>
+      {open ? (
+        <div className="mt-3 border-t border-line pt-3">
+          {snap.inAt ? (
+            <p className="text-sm text-muted">
+              Приход {clock(snap.inAt)}
+              {snap.inSource === "auto" ? " · сами" : snap.inSource === "lan" ? " · по ПК в сети" : ""}
+              {snap.outAt ? ` · уход ${clock(snap.outAt)}` : ""}
+            </p>
+          ) : null}
+          {whyOff ? <p className="mt-2 text-sm text-muted">{whyOff}</p> : null}
+          {msg ? (
+            <p className={`mt-2 text-sm ${msg.includes("закреплён") ? "text-ok" : "text-bad"}`}>{msg}</p>
+          ) : null}
+          <div className="mt-3 flex flex-wrap gap-2">
+            {needIn ? (
+              <Button disabled={busy || !canMark} title={whyOff || undefined} onClick={() => void act("in")}>
+                {busy ? "…" : "Пришёл"}
+              </Button>
+            ) : null}
+            {needOut ? (
+              <Button disabled={busy || !canMark} title={whyOff || undefined} onClick={() => void act("out")}>
+                {busy ? "…" : "Ушёл"}
+              </Button>
+            ) : null}
+            {snap.onSite && !snap.stationBound ? (
+              <Button variant="secondary" disabled={busy} onClick={() => void pinPc()}>
+                {busy ? "…" : "Это мой ПК"}
+              </Button>
+            ) : null}
+          </div>
+          {snap.stationBound ? <p className="mt-2 text-xs text-muted">Рабочий ПК закреплён</p> : null}
+        </div>
       ) : null}
-      {!snap.officeConfigured ? (
-        <p className="mt-2 text-sm text-warn">Админ ещё не запомнил офисную сеть в Настройках — отметиться пока нельзя.</p>
-      ) : !snap.onSite ? (
-        <p className="mt-2 text-sm text-muted">Отметиться можно только в офисе. Подключитесь к Wi‑Fi студии.</p>
-      ) : null}
-      {msg ? <p className="mt-2 text-sm text-bad">{msg}</p> : null}
-      <div className="mt-4 flex flex-wrap gap-2">
-        {needIn ? (
-          <Button className="min-w-40" disabled={busy || !snap.onSite || !snap.officeConfigured} onClick={() => void act("in")}>
-            {busy ? "…" : "Пришёл"}
-          </Button>
-        ) : null}
-        {needOut ? (
-          <Button className="min-w-40" disabled={busy || !snap.onSite} onClick={() => void act("out")}>
-            {busy ? "…" : "Ушёл"}
-          </Button>
-        ) : null}
-      </div>
     </Card>
   );
 }

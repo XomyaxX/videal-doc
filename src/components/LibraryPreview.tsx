@@ -2,14 +2,16 @@
 
 import { useState } from "react";
 import { LIBRARY_KIND_LABEL } from "@/lib/library-kinds";
+import { ModelPreview } from "./ModelPreview";
 
 export type LibraryFileCard = {
   id: string;
   originalName: string;
   mimeType: string;
   uncPath?: string;
-  preview: "image" | "pdf" | "video" | "none";
+  preview: "image" | "pdf" | "video" | "model3d" | "none";
   fileUrl: string;
+  previewUrl?: string;
   thumbUrl: string;
 };
 
@@ -22,7 +24,7 @@ export type LibraryCard = {
   originalName: string;
   mimeType: string;
   uncPath: string;
-  preview: "image" | "pdf" | "video" | "none";
+  preview: "image" | "pdf" | "video" | "model3d" | "none";
   thumbUrl: string;
   fileUrl: string;
   href: string;
@@ -49,22 +51,26 @@ function FileView({ file }: { file: LibraryFileCard }) {
     const src = file.preview === "image" ? file.fileUrl : file.thumbUrl || file.fileUrl;
     return (
       // eslint-disable-next-line @next/next/no-img-element
-      <img src={src} alt={file.originalName} className="max-h-[70vh] w-full rounded-xl bg-white object-contain" />
+      <img src={src} alt={file.originalName} className="max-h-[85vh] w-full rounded-xl bg-white object-contain" />
     );
   }
   if (file.preview === "pdf") {
-    return <iframe title={file.originalName} src={file.fileUrl} className="h-[70vh] w-full rounded-xl bg-white" />;
+    return <iframe title={file.originalName} src={file.fileUrl} className="h-[85vh] w-full rounded-xl bg-white" />;
   }
   if (file.preview === "video") {
     return (
-      <video src={file.fileUrl} controls className="max-h-[70vh] w-full rounded-xl bg-black">
+      <video src={file.fileUrl} controls className="max-h-[85vh] w-full rounded-xl bg-black">
         <track kind="captions" />
       </video>
     );
   }
+  if (file.preview === "model3d") {
+    return <ModelPreview src={file.previewUrl || file.fileUrl} tall className="h-[85vh] overflow-hidden rounded-xl" />;
+  }
   return (
     <div className="rounded-xl border border-dashed border-line bg-white px-6 py-12 text-center">
       <p className="font-serif text-xl text-navy">В браузере этот файл не открыть</p>
+      <p className="mt-2 text-sm text-muted">Для 3D в предпросмотре нужен GLB или GLTF (экспорт из Blender).</p>
       <a href={file.fileUrl} className="mt-4 inline-block font-semibold text-navy underline">
         Скачать {file.originalName}
       </a>

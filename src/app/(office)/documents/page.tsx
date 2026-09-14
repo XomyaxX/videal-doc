@@ -87,6 +87,7 @@ export default async function DocumentsPage({
             ).length;
             let tone = "wait";
             let label = "Ждёт вас";
+            let statusHint = "";
             if (mine) {
               const st = recipientDone({
                 ackedAt: mine.ackedAt,
@@ -103,10 +104,11 @@ export default async function DocumentsPage({
                 label = "Готово";
               } else if (st === "rejected") {
                 tone = "bad";
-                label = "Отказ";
+                label = "Не могу выполнить";
               }
             } else {
               label = `${doneCount} из ${d.recipients.length}`;
+              statusHint = "столько людей уже отметились";
               tone = doneCount === d.recipients.length ? "ok" : "wait";
             }
             return (
@@ -121,7 +123,7 @@ export default async function DocumentsPage({
                       <div className="mt-1 text-sm text-muted">
                         {[
                           d.requireAck ? "ознакомиться" : "",
-                          d.requireSignedReturn ? "вернуть подписанным" : "",
+                          d.requireSignedReturn ? "вернуть подписанным (распечатать, подписать, загрузить скан)" : "",
                           d.requireApproval ? "согласовать" : "",
                           d.dueAt ? `до ${fmtDate(d.dueAt)}` : "",
                         ]
@@ -129,7 +131,10 @@ export default async function DocumentsPage({
                           .join(" · ")}
                       </div>
                     </div>
-                    <Pill tone={tone}>{label}</Pill>
+                    <span title={statusHint || undefined} className="text-right">
+                      <Pill tone={tone}>{label}</Pill>
+                      {statusHint ? <span className="mt-1 block text-[11px] text-muted">{statusHint}</span> : null}
+                    </span>
                   </div>
                 </Card>
               </Link>

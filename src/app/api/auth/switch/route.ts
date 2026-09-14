@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { DEVICE_COOKIE, SESSION_COOKIE } from "@/lib/auth";
+import { DEVICE_COOKIE, SESSION_COOKIE, deviceTrusted, trustDevice } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sessionCookieOpts } from "@/lib/cookie";
 import { fullName } from "@/lib/names";
@@ -29,8 +29,12 @@ export async function POST(req: NextRequest) {
   if (!row) return NextResponse.json({ error: "Сессия истекла" }, { status: 401 });
   const perms = parsePermissions(row.user.role.permissions);
   const privileged = needs2fa({ roleCode: row.user.role.code, permissions: perms });
-  if (privileged) {
+  const trusted = privileged && (await deviceTrusted(row.user.id, device));
+  if (privileged && !trusted) {
     await prisma.session.update({ where: { id: row.id }, data: { totpOk: false } });
+  } else if (trusted) {
+    await prisma.session.update({ where: { id: row.id }, data: { totpOk: true } });
+    await trustDevice(row.user.id, device, row.userAgent);
   }
   const res = NextResponse.json({
     account: {
@@ -41,7 +45,7 @@ export async function POST(req: NextRequest) {
     },
     mustChangePassword: row.user.mustChangePassword,
     need2faSetup: privileged && !row.user.totpEnabled,
-    need2fa: privileged && row.user.totpEnabled,
+    need2fa: privileged && row.user.totpEnabled && !trusted,
   });
   res.cookies.set(SESSION_COOKIE, row.token, sessionCookieOpts(req));
   return res;

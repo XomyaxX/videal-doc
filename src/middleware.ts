@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const PUBLIC = ["/login", "/api/auth/login", "/api/auth/switch", "/api/auth/accounts", "/api/auth/2fa", "/api/push/vapid"];
+const PUBLIC = ["/login", "/pc", "/api/pc", "/api/auth/login", "/api/auth/switch", "/api/auth/accounts", "/api/auth/2fa", "/api/push/vapid"];
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -37,5 +37,7 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image).*)"],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|sw.js|api/.*/files|api/.*/blobs|api/upload).*)",
+  ],
 };

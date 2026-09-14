@@ -75,6 +75,28 @@ export function officeTodayNoon(d = new Date()) {
   return new Date(`${officeYmd(d)}T12:00:00+06:00`);
 }
 
+/** Last calendar day of the office month that contains `d` (noon Omsk). */
+export function lastOfficeDayOfMonth(d: Date) {
+  const ymd = officeYmd(d);
+  const y = Number(ymd.slice(0, 4));
+  const m = Number(ymd.slice(5, 7));
+  const nextY = m === 12 ? y + 1 : y;
+  const nextM = m === 12 ? 1 : m + 1;
+  const nextNoon = new Date(`${nextY}-${String(nextM).padStart(2, "0")}-01T12:00:00+06:00`);
+  return new Date(nextNoon.getTime() - 24 * 60 * 60 * 1000);
+}
+
+export function aoDateFromReceipts(receipts: { occurredAt: Date | string | null | undefined }[]): Date | null {
+  let latest: Date | null = null;
+  for (const r of receipts) {
+    if (!r.occurredAt) continue;
+    const dt = r.occurredAt instanceof Date ? r.occurredAt : new Date(r.occurredAt);
+    if (Number.isNaN(dt.getTime())) continue;
+    if (!latest || dt > latest) latest = dt;
+  }
+  return latest ? lastOfficeDayOfMonth(latest) : null;
+}
+
 export const moscowYmd = officeYmd;
 
 export function officeDateParts(d: Date) {

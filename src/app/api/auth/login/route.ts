@@ -18,14 +18,16 @@ export async function POST(req: NextRequest) {
 
   let device = req.cookies.get(DEVICE_COOKIE)?.value || "";
   if (!device || device.length < 16) device = randomToken(24);
+  const remember = body?.remember !== false;
 
-  const result = await loginWithPassword(login, password, ip, ua, device);
+  const result = await loginWithPassword(login, password, ip, ua, device, remember);
   if ("error" in result) {
     loginFailed(ip, login);
     return NextResponse.json({ error: result.error }, { status: 401 });
   }
   loginOk(ip, login);
   await audit({ userId: result.user.id, action: "login", entity: "session", ip });
+  const privileged = needs2fa(result.user);
   const res = NextResponse.json({
     account: {
       userId: result.user.id,
@@ -34,8 +36,8 @@ export async function POST(req: NextRequest) {
       roleName: result.user.roleName,
     },
     mustChangePassword: result.user.mustChangePassword,
-    need2faSetup: needs2fa(result.user) && !result.user.totpEnabled,
-    need2fa: needs2fa(result.user) && result.user.totpEnabled,
+    need2faSetup: privileged && !result.user.totpEnabled,
+    need2fa: privileged && result.user.totpEnabled && !result.user.totpOk,
   });
   res.cookies.set(SESSION_COOKIE, result.token, sessionCookieOpts(req));
   res.cookies.set(DEVICE_COOKIE, device, deviceCookieOpts(req));

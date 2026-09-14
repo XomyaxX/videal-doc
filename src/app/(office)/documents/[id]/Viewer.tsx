@@ -1,12 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
-
-export function Viewer({ fileId, docId }: { fileId: string; docId: string }) {
-  useEffect(() => {
-    fetch(`/api/documents/${docId}/view`, { method: "POST" });
-  }, [docId]);
+export function Viewer({ fileId }: { fileId: string; docId?: string }) {
   return (
-    <iframe title="Просмотр" src={`/api/files/${fileId}`} className="h-[70vh] w-full rounded-xl bg-white" />
+    <iframe title="Просмотр" src={`/api/files/${fileId}`} className="h-[70vh] w-full rounded-xl bg-white md:h-[70vh] min-h-[50vh]" />
   );
 }

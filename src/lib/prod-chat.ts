@@ -5,11 +5,16 @@ import { prisma } from "./prisma";
 import { assertInside, fileRoot, safeFilePart } from "./files";
 import { canLeadProd, canManageProd, canSeeProdTask, shareRoot, toUnc } from "./prod";
 import { previewMode } from "./library-kinds";
+import { storeGlbPreview } from "./glb-convert";
 import { notifyMany } from "./notify";
 import { fullName } from "./names";
 import type { SessionUser } from "./types";
 
 const BLOCKED = new Set([".exe", ".bat", ".cmd", ".com", ".msi", ".dll", ".sh", ".ps1", ".js", ".vbs", ".scr"]);
+
+export function taskThreadKey(taskId: string) {
+  return `task:${taskId}`;
+}
 
 export function taskChatScope(task: {
   shotId?: string | null;
@@ -52,29 +57,24 @@ export async function siblingChatTasks(scopeKey: string) {
       stage: true,
       status: true,
       assigneeId: true,
+      helperId: true,
       assignee: { select: { id: true, lastName: true, firstName: true, middleName: true } },
+      helper: { select: { id: true, lastName: true, firstName: true, middleName: true } },
     },
   });
 }
 
 export async function canSeeTaskChat(user: SessionUser, taskId: string) {
   const task = await loadChatTask(taskId);
-  if (!task || !taskChatScope(task)) return false;
-  if (canSeeProdTask(user, task)) return true;
-  const scope = taskChatScope(task)!;
-  const sibs = await siblingChatTasks(scope);
-  return sibs.some((t) => t.assigneeId === user.id);
+  if (!task) return false;
+  return canSeeProdTask(user, task);
 }
 
 export async function canWriteTaskChat(user: SessionUser, taskId: string) {
   if (canManageProd(user) || canLeadProd(user)) return true;
   const task = await loadChatTask(taskId);
   if (!task) return false;
-  const scope = taskChatScope(task);
-  if (!scope) return false;
-  if (task.assigneeId === user.id) return true;
-  const sibs = await siblingChatTasks(scope);
-  return sibs.some((t) => t.assigneeId === user.id);
+  return task.assigneeId === user.id || task.helperId === user.id;
 }
 
 export function chatTitle(task: {
@@ -140,8 +140,7 @@ export async function postTaskChatMessage(opts: {
   if (!(await canWriteTaskChat(opts.user, opts.taskId))) throw new Error("Нет права писать в чат");
   const task = await loadChatTask(opts.taskId);
   if (!task) throw new Error("Нет задачи");
-  const scopeKey = taskChatScope(task);
-  if (!scopeKey) throw new Error("У этой задачи нет командного чата");
+  const scopeKey = taskThreadKey(opts.taskId);
   const body = opts.body.trim().slice(0, 4000);
   const incoming = opts.files.filter((f) => f.buffer.length > 0);
   if (!body && incoming.length === 0) throw new Error("Напишите текст или приложите файл");
@@ -158,6 +157,7 @@ export async function postTaskChatMessage(opts: {
     mimeType: string;
     size: number;
     fileId: string;
+    previewFileId: string;
     absPath: string;
     uncPath: string;
     uploadedById: string;
@@ -182,11 +182,24 @@ export async function postTaskChatMessage(opts: {
       });
       fileId = rec.id;
     }
+    if (fileId) {
+      const capturedId = fileId;
+      void storeGlbPreview({
+        buffer: file.buffer,
+        originalName: file.originalName,
+        userId: opts.user.id,
+        maxBytes: opts.maxBytes,
+      }).then((pid) => {
+        if (!pid) return;
+        return prisma.prodChatFile.updateMany({ where: { fileId: capturedId }, data: { previewFileId: pid } });
+      });
+    }
     saved.push({
       originalName: path.basename(file.originalName).slice(0, 200),
       mimeType: mime,
       size: file.buffer.length,
       fileId,
+      previewFileId: "",
       absPath,
       uncPath: toUnc(absPath),
       uploadedById: opts.user.id,
@@ -206,12 +219,11 @@ export async function postTaskChatMessage(opts: {
     },
   });
 
-  const sibs = await siblingChatTasks(scopeKey);
-  const others = [...new Set(sibs.map((t) => t.assigneeId).filter((id): id is string => Boolean(id) && id !== opts.user.id))];
+  const others = [...new Set([task.assigneeId, task.helperId].filter((id): id is string => Boolean(id) && id !== opts.user.id))];
   if (others.length) {
     const who = fullName(row.author);
     void notifyMany(others, {
-      title: chatTitle(task),
+      title: "Чат задачи",
       body: body ? `${who}: ${body.slice(0, 120)}` : `${who} прислал файл`,
       link: `/prod/tasks/${opts.taskId}`,
       urgency: "normal",
@@ -223,9 +235,10 @@ export async function postTaskChatMessage(opts: {
 
 export function serializeProdChatFile(
   taskId: string,
-  f: { id: string; originalName: string; mimeType: string; size: number; uncPath: string },
+  f: { id: string; originalName: string; mimeType: string; size: number; uncPath: string; previewFileId?: string },
 ) {
-  const preview = previewMode(f);
+  const preview = f.previewFileId ? "model3d" : previewMode(f);
+  const fileUrl = `/api/prod/tasks/${taskId}/chat/file/${f.id}`;
   return {
     id: f.id,
     originalName: f.originalName,
@@ -233,7 +246,8 @@ export function serializeProdChatFile(
     size: f.size,
     uncPath: f.uncPath,
     preview,
-    fileUrl: `/api/prod/tasks/${taskId}/chat/file/${f.id}`,
-    thumbUrl: preview === "image" ? `/api/prod/tasks/${taskId}/chat/file/${f.id}` : "",
+    fileUrl,
+    previewUrl: f.previewFileId ? `${fileUrl}?preview=1` : preview === "model3d" ? fileUrl : "",
+    thumbUrl: preview === "image" ? fileUrl : "",
   };
 }

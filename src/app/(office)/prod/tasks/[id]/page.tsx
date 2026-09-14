@@ -7,22 +7,23 @@ import {
   STAGE_LABEL,
   STATUS_LABEL,
   STATUS_PILL,
+  canApproveProdTask,
   canLeadProd,
   canSeeProdTask,
   canWorkTask,
+  toUnc,
 } from "@/lib/prod";
 import { canSeeJob } from "@/lib/jobs";
-import { taskTitle } from "@/lib/prod-server";
-import { fullName } from "@/lib/names";
+import { ASSIGNED_BY_SELECT, taskTitle } from "@/lib/prod-server";
+import { fullName, pairNames } from "@/lib/names";
 import { fmtDate, officeYmd } from "@/lib/dates";
 import { TaskPanel } from "./TaskPanel";
 import { DateEditor } from "./DateEditor";
 import { TaskLibrary } from "./TaskLibrary";
-import { TaskPreview } from "./TaskPreview";
 import { TaskComments } from "./TaskComments";
+import { TaskRename } from "./TaskRename";
 import { TaskTrash } from "./TaskTrash";
 import { TeamChat } from "@/components/TeamChat";
-import { chatTitle, taskChatScope } from "@/lib/prod-chat";
 import { allStageSort, pipelineKindLabel, taskPipelineKind } from "@/lib/prod-kinds";
 import { serializeLibrary } from "@/lib/library";
 import { USER_SAFE_ORG_SELECT, USER_SAFE_SELECT } from "@/lib/user-public";
@@ -36,6 +37,8 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
     where: { id },
     include: {
       assignee: { select: USER_SAFE_ORG_SELECT },
+      helper: { select: USER_SAFE_ORG_SELECT },
+      assignedBy: { select: ASSIGNED_BY_SELECT },
       shot: true,
       scene: { include: { episode: { include: { show: { select: { pipelineKind: true, name: true } } } } } },
       asset: { include: { episode: { include: { show: { select: { pipelineKind: true, name: true } } } } } },
@@ -70,7 +73,8 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
     include: { department: true },
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
   });
-  const work = canWorkTask(user, task.assigneeId);
+  const work = canWorkTask(user, task.assigneeId, task.helperId);
+  const canApprove = canApproveProdTask(user, task);
 
   const siblingWhere = task.shotId
     ? { shotId: task.shotId }
@@ -89,6 +93,7 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
         stage: true,
         status: true,
         assignee: { select: { id: true, lastName: true, firstName: true, middleName: true } },
+        helper: { select: { id: true, lastName: true, firstName: true, middleName: true } },
       },
     })
   ).sort((a, b) => {
@@ -96,15 +101,6 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
     const ib = STAGE_SORT.indexOf(b.stage as (typeof STAGE_SORT)[number]);
     return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
   });
-  const chatScope = taskChatScope(task);
-  const chatPeople = [
-    ...new Map(
-      siblings
-        .filter((s) => s.assignee)
-        .map((s) => [s.assignee!.id, fullName(s.assignee!)] as const),
-    ).values(),
-  ];
-
   return (
     <div>
       <PageHeader
@@ -134,6 +130,13 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
           </div>
         }
       />
+      {(work || lead) && !task.deletedAt ? (
+        <TaskRename
+          id={task.id}
+          title={task.title || ""}
+          fallback={taskTitle({ ...task, title: "" })}
+        />
+      ) : null}
       {task.deletedAt ? (
         <div className="mb-5 rounded-2xl border border-line bg-[#fff8ec] px-4 py-3">
           <p className="font-semibold text-navy">Задача удалена</p>
@@ -164,12 +167,13 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
           <div className="flex flex-wrap items-center gap-2">
             {pipeLabel ? <Pill tone={pipeKind === "ai" ? "wait" : "draft"}>{pipeLabel}</Pill> : null}
             <Pill tone={STATUS_PILL[task.status]}>{STATUS_LABEL[task.status]}</Pill>
-            {task.startsAt || task.dueAt ? (
-              <span className="text-sm text-muted">
-                {task.startsAt ? fmtDate(task.startsAt) : "…"} → {task.dueAt ? fmtDate(task.dueAt) : "без срока"}
-              </span>
+            {task.startsAt ? (
+              <span className="text-sm text-muted">в работе с {fmtDate(task.startsAt)}</span>
+            ) : null}
+            {task.dueAt ? (
+              <span className="text-sm text-muted">дедлайн {fmtDate(task.dueAt)}</span>
             ) : (
-              <span className="text-sm text-muted">срок не проставлен</span>
+              <span className="text-sm text-muted">дедлайн не проставлен</span>
             )}
           </div>
           {task.shot?.description ? <p className="mt-3">{task.shot.description}</p> : null}
@@ -180,33 +184,31 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
           ) : null}
           <p className="mt-4 text-sm">
             Исполнитель:{" "}
-            <span className="font-semibold">{task.assignee ? fullName(task.assignee) : "не назначен"}</span>
+            <span className="font-semibold">{pairNames(task.assignee, task.helper, fullName)}</span>
             {task.assigneeLocked ? <span className="ml-2 text-xs text-muted">закреплён вручную</span> : null}
           </p>
+          {task.helper ? (
+            <p className="mt-1 text-xs text-muted">
+              Главный — {fullName(task.assignee || { lastName: "не назначен", firstName: "" })}, суб-исполнитель —{" "}
+              {fullName(task.helper)}
+            </p>
+          ) : null}
           {task.skills.length > 0 ? (
             <p className="mt-2 text-sm text-muted">Скилы: {task.skills.map((s) => s.skill.name).join(" · ")}</p>
           ) : null}
-          {task.diskDir ? (
-            <p className="mt-2 break-all text-xs text-muted">Папка: {task.diskDir}</p>
+          {task.diskDir && !work && !lead ? (
+            <p className="mt-2 break-all text-xs text-muted">Папка: {toUnc(task.diskDir)}</p>
           ) : null}
 
           {!work && !lead ? (
             <p className="mt-4 text-sm text-muted">Эта задача на другом сотруднике — вам доступен только просмотр.</p>
           ) : null}
 
-          <TaskPreview
-            files={task.files.map((f) => ({
-              id: f.id,
-              originalName: f.originalName,
-              mimeType: f.mimeType,
-            }))}
-          />
-
           {lead && !task.deletedAt ? (
             <DateEditor
               id={task.id}
-              startsAt={task.startsAt ? officeYmd(task.startsAt) : ""}
               dueAt={task.dueAt ? officeYmd(task.dueAt) : ""}
+              startedLabel={task.startsAt ? `В работе с ${fmtDate(task.startsAt)}` : undefined}
             />
           ) : null}
           {(work || lead) && !task.deletedAt ? (
@@ -215,8 +217,11 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
                 id={task.id}
                 status={task.status}
                 canLead={lead}
+                canApprove={canApprove}
                 people={people.map((p) => ({ id: p.id, name: fullName(p) }))}
                 assigneeId={task.assigneeId || ""}
+                helperId={task.helperId || ""}
+                diskUnc={task.diskDir ? toUnc(task.diskDir) : ""}
               />
             </div>
           ) : null}
@@ -228,24 +233,37 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
         </Card>
         <div className="space-y-6">
           <Card className="bd-card">
-            <h2 className="font-serif text-xl text-navy">Комментарии</h2>
-            <p className="mt-1 text-sm text-muted">Заметки к этой задаче. Чат шота — ниже, общий на все этапы.</p>
+            <h2 className="font-serif text-xl text-navy">Чат задачи</h2>
+            <p className="mt-1 text-sm text-muted">Только эта задача. Сообщения соседних этапов сюда не попадают.</p>
+            {task.events.some((e) => e.action === "comment" && e.body) ? (
+              <div className="mt-3">
+                <TaskComments
+                  taskId={task.id}
+                  canWrite={false}
+                  me={user.id}
+                  comments={task.events
+                    .filter((e) => e.action === "comment" && e.body)
+                    .slice()
+                    .reverse()
+                    .map((e) => ({
+                      id: e.id,
+                      body: e.body,
+                      createdAt: e.createdAt.toISOString(),
+                      authorId: e.userId,
+                      authorName: fullName(e.user),
+                    }))}
+                />
+              </div>
+            ) : null}
             <div className="mt-3">
-              <TaskComments
-                taskId={task.id}
+              <TeamChat
+                endpoint={`/api/prod/tasks/${task.id}/chat`}
                 canWrite={(work || lead) && !task.deletedAt}
                 me={user.id}
-                comments={task.events
-                  .filter((e) => e.action === "comment" && e.body)
-                  .slice()
-                  .reverse()
-                  .map((e) => ({
-                    id: e.id,
-                    body: e.body,
-                    createdAt: e.createdAt.toISOString(),
-                    authorId: e.userId,
-                    authorName: fullName(e.user),
-                  }))}
+                className="h-[min(50vh,28rem)]"
+                emptyText="Пока тихо. Напишите по этой задаче или киньте файл."
+                lockedText="Писать могут исполнитель и руководители."
+                placeholder="Сообщение по задаче"
               />
             </div>
           </Card>
@@ -292,33 +310,6 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
           </Card>
         </div>
       </div>
-      {chatScope ? (
-        <Card className="bd-card mt-6">
-          <h2 className="font-serif text-xl text-navy">{chatTitle(task)}</h2>
-          <p className="mt-1 text-sm text-muted">
-            Общий чат связанных этапов
-            {chatPeople.length ? ` · ${chatPeople.join(", ")}` : ""}.{" "}
-            {task.shot
-              ? siblings.some((s) => s.stage === "first_frame" || s.stage === "gen_video")
-                ? "Один тред на начальный кадр и генерацию видео этого шота."
-                : "Один тред на Анимацию, Липсинк и Эмоции этого шота."
-              : task.asset
-                ? "Один тред на этапы этого ассета."
-                : "Один тред на этапы этой сцены."}
-          </p>
-          <div className="mt-4">
-            <TeamChat
-              endpoint={`/api/prod/tasks/${task.id}/chat`}
-              canWrite={(work || lead) && !task.deletedAt}
-              me={user.id}
-              className="h-[min(50vh,28rem)]"
-              emptyText="Пока тихо. Напишите коллегам или киньте референс."
-              lockedText="Писать могут исполнители связанных этапов и руководители."
-              placeholder="Сообщение команде"
-            />
-          </div>
-        </Card>
-      ) : null}
     </div>
   );
 }

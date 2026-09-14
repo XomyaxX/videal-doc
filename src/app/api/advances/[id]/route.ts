@@ -7,6 +7,7 @@ import { notify } from "@/lib/notify";
 import { rubToKopecks } from "@/lib/money";
 import { archiveAdvance } from "@/lib/archive";
 import { mailAdvanceToAccountant } from "@/lib/advance-mail";
+import { aoDateFromReceipts } from "@/lib/dates";
 
 async function load(id: string) {
   return prisma.advanceReport.findFirst({
@@ -54,7 +55,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Добавьте хотя бы один расход с фото или документом" }, { status: 400 });
     }
     if (spent <= 0) return NextResponse.json({ error: "Сумма расходов не может быть нулевой" }, { status: 400 });
-    await prisma.advanceReport.update({ where: { id }, data: { status: "review" } });
+    const reportDate = aoDateFromReceipts(report.receipts) || report.reportDate;
+    await prisma.advanceReport.update({ where: { id }, data: { status: "review", reportDate } });
     await archiveAdvance(id);
     const accountants = await prisma.user.findMany({
       where: { deletedAt: null, status: "active", role: { code: { in: ["accountant", "admin", "superadmin"] } } },
@@ -80,6 +82,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
       return NextResponse.json({ ok: true, mailed: true, to: mailed.to });
     }
+    return NextResponse.json({ ok: true });
+  }
+
+  if (action === "recall") {
+    if (report.userId !== session.user.id) return NextResponse.json({ error: "Только автор" }, { status: 403 });
+    if (report.status !== "review") {
+      return NextResponse.json({ error: "Отозвать можно только с проверки бухгалтера" }, { status: 400 });
+    }
+    await prisma.advanceReport.update({ where: { id }, data: { status: "draft" } });
+    const accountants = await prisma.user.findMany({
+      where: { deletedAt: null, status: "active", role: { code: { in: ["accountant", "admin", "superadmin"] } } },
+    });
+    for (const a of accountants) {
+      await notify({
+        userId: a.id,
+        title: "Авансовый отозвали с проверки",
+        body: report.number,
+        link: `/advances/${id}`,
+        urgency: "normal",
+      });
+    }
+    await audit({ userId: session.user.id, action: "advance.recall", entity: "advance", entityId: id });
     return NextResponse.json({ ok: true });
   }
 

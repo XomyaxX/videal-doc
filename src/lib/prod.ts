@@ -16,14 +16,22 @@ export const STATUS_LABEL: Record<string, string> = {
 };
 
 export const STATUS_PILL: Record<string, string> = {
-  todo: "draft",
-  wip: "wait",
-  done: "warn",
-  revise: "bad",
-  approved: "ok",
-  na: "draft",
-  blocked: "warn",
+  todo: "st-todo",
+  wip: "st-wip",
+  done: "st-done",
+  revise: "st-revise",
+  approved: "st-approved",
+  na: "st-na",
+  blocked: "st-blocked",
 };
+
+export function pctBarClass(value: number) {
+  const v = Math.max(0, Math.min(100, Math.round(value)));
+  if (v >= 100) return "bg-[var(--st-approved)]";
+  if (v >= 80) return "bg-[var(--st-done)]";
+  if (v >= 35) return "bg-[var(--st-wip)]";
+  return "bg-[var(--st-todo)]";
+}
 
 export const STAGE_LABEL: Record<string, string> = {
   script: "Сценарий",
@@ -126,6 +134,9 @@ export const SHEET_STATUS: Record<string, ProdStatus> = {
   "в работе": "wip",
   готово: "done",
   "под правками": "revise",
+  "правки в работе": "revise",
+  правки: "revise",
+  "в правках": "revise",
   утверждено: "approved",
   "не нужен": "na",
   "не нужно": "na",
@@ -186,21 +197,65 @@ export function canLeadProd(
   return false;
 }
 
-export function canWorkTask(user: SessionUser, assigneeId: string | null): boolean {
+export function canWorkTask(user: SessionUser, assigneeId: string | null, helperId?: string | null): boolean {
   if (canManageProd(user) || userCan(user, "prod.lead")) return true;
-  return userCan(user, "prod.work") && assigneeId === user.id;
+  if (!userCan(user, "prod.work")) return false;
+  return assigneeId === user.id || helperId === user.id;
+}
+
+export const APPROVE_DENIED = "Утвердить может руководитель, который ставил задачу";
+
+export function isSubLead(user: { roleCode?: string; role?: { code: string } | null }) {
+  return leadRoleCode(user) === "sublead";
+}
+
+function leadRoleCode(user: { roleCode?: string; role?: { code: string } | null }) {
+  return user.roleCode || user.role?.code || "";
+}
+
+export function isFullProdLead(user: {
+  roleCode?: string;
+  role?: { code: string } | null;
+  prodScope?: string | null;
+}) {
+  const code = leadRoleCode(user);
+  if (code === "sublead") return false;
+  if (user.prodScope === "studio") return true;
+  return code === "manager" || code === "admin" || code === "superadmin";
+}
+
+export function canApproveProdTask(
+  user: SessionUser,
+  task: {
+    stage: string;
+    assigneeId: string | null;
+    helperId?: string | null;
+    assignee?: { department?: { name: string } | null } | null;
+    assignedBy?: {
+      roleCode?: string;
+      role?: { code: string } | null;
+      prodScope?: string | null;
+    } | null;
+  },
+) {
+  if (!canLeadProd(user, task.stage, task.assignee?.department?.name)) return false;
+  if (!isSubLead(user)) return true;
+  if (task.assigneeId === user.id || task.helperId === user.id) return false;
+  if (task.assignedBy && isFullProdLead(task.assignedBy)) return false;
+  return true;
 }
 
 export function canSeeProdTask(
   user: SessionUser,
   task: {
     assigneeId: string | null;
+    helperId?: string | null;
     stage: string;
     assignee?: { department?: { name: string } | null } | null;
   },
 ): boolean {
   if (canManageProd(user)) return true;
-  if (task.assigneeId === user.id) return true;
+  if (task.assigneeId === user.id || task.helperId === user.id) return true;
   return canLeadProd(user, task.stage, task.assignee?.department?.name);
 }
 
@@ -243,12 +298,34 @@ export function toUnc(absPath: string): string {
   return absPath;
 }
 
+/** Хвост после папки Data. Префикс UNC / linux / диск — отбрасывается. */
+export function dataTail(p: string): string {
+  const s = (p || "").trim().replace(/^["']+|["']+$/g, "");
+  if (!s) throw new Error("Укажите путь с папкой Data");
+  const parts = s.replace(/\\/g, "/").split("/").filter((seg) => seg && seg !== ".");
+  const idx = parts.findIndex((seg) => seg.toLowerCase() === "data");
+  if (idx < 0) throw new Error("В пути должна быть папка Data — всё до неё система отбросит");
+  const tail = parts.slice(idx + 1);
+  if (tail.some((seg) => seg === ".." || /[<>:"|?*\u0000]/.test(seg))) {
+    throw new Error("Некорректный путь");
+  }
+  return tail.join("/");
+}
+
+export function absFromDataPath(p: string): string {
+  const tail = dataTail(p);
+  const root = shareRoot().replace(/\\/g, "/").replace(/\/+$/, "");
+  return `${root}/Data${tail ? `/${tail}` : ""}`.replace(/\/+/g, "/");
+}
+
+/** Для сидов: `Data/хвост` или пусто, если якоря Data нет. */
 export function fromWinPath(p: string): string {
-  const s = (p || "").trim();
-  if (!s) return "";
-  const unc = s.replace(/^\\\\Win-ig5p3pa35h3\\d\\/i, "").replace(/^\\\\192\.168\.1\.51\\d\\/i, "");
-  const dos = unc.replace(/^D:\\/i, "").replace(/^D:\//i, "");
-  return dos.replace(/\\/g, "/");
+  try {
+    const tail = dataTail(p);
+    return tail ? `Data/${tail}` : "Data";
+  } catch {
+    return "";
+  }
 }
 
 export function taskDiskDir(opts: {
@@ -262,8 +339,11 @@ export function taskDiskDir(opts: {
 }): string {
   const root = shareRoot();
   if (opts.assetPath) {
-    const rel = fromWinPath(opts.assetPath);
-    return `${root}/${rel}`.replace(/\/+/g, "/");
+    try {
+      return absFromDataPath(opts.assetPath);
+    } catch {
+      /* нет Data — канонический путь серии ниже */
+    }
   }
   const ep = opts.episodeCode || "EP";
   if (PREPROD_STAGES.has(opts.stage)) {

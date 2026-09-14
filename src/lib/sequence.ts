@@ -8,5 +8,7 @@ export async function nextNumber(key: string, prefix: string): Promise<string> {
     create: { key: seqKey, value: 1 },
     update: { value: { increment: 1 } },
   });
-  return `${prefix}-${year}-${row.value.toString().padStart(4, "0")}`;
+  const n = row.value.toString().padStart(4, "0");
+  const p = prefix.trim();
+  return p ? `${p}-${year}-${n}` : `${year}-${n}`;
 }

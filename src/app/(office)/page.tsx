@@ -8,7 +8,6 @@ import { upcomingBirthdays } from "@/lib/birthdays";
 import { fullName } from "@/lib/names";
 import { dueLabel, issuedYmd, reportDueYmd } from "@/lib/report-period";
 import { ReportFundsPicker } from "@/components/ReportFundsPicker";
-import { PresenceCard } from "./PresenceCard";
 import { chatUnreadTotal } from "@/lib/chat-server";
 import { USER_SAFE_SELECT } from "@/lib/user-public";
 
@@ -89,6 +88,17 @@ export default async function HomePage() {
     : [];
 
   const weekEnd = new Date(Date.now() + 8 * 24 * 60 * 60 * 1000);
+  const meetings = await prisma.meeting.findMany({
+    where: {
+      deletedAt: null,
+      status: { notIn: ["cancelled", "done"] },
+      startsAt: { lte: weekEnd },
+      endsAt: { gte: new Date() },
+      OR: [{ authorId: user.id }, { participants: { some: { userId: user.id } } }],
+    },
+    orderBy: { startsAt: "asc" },
+    take: 8,
+  });
   const events = await prisma.calendarEvent.findMany({
     where: {
       deletedAt: null,
@@ -102,9 +112,9 @@ export default async function HomePage() {
 
   const myProd = await prisma.task.findMany({
     where: {
-      assigneeId: user.id,
       deletedAt: null,
       status: { in: ["todo", "wip", "revise", "blocked", "done"] },
+      OR: [{ assigneeId: user.id }, { helperId: user.id }],
     },
     include: { shot: true, scene: true, asset: true },
     orderBy: [{ dueAt: "asc" }, { updatedAt: "desc" }],
@@ -114,8 +124,15 @@ export default async function HomePage() {
   const notes = await prisma.notification.findMany({
     where: { userId: user.id },
     orderBy: { createdAt: "desc" },
-    take: 6,
+    take: 24,
   });
+  const seenNote = new Set<string>();
+  const uniqueNotes = notes.filter((n) => {
+    const key = `${n.title}|${n.link || ""}`;
+    if (seenNote.has(key)) return false;
+    seenNote.add(key);
+    return true;
+  }).slice(0, 5);
 
   const withBirth = await prisma.user.findMany({
     where: { deletedAt: null, status: "active", birthDate: { not: null } },
@@ -123,28 +140,53 @@ export default async function HomePage() {
   });
   const birthdays = upcomingBirthdays(withBirth, 21);
 
-  const myRequests = can(user, "requests.create")
-    ? await prisma.purchaseRequest.findMany({
-        where: can(user, "requests.aho")
-          ? { status: { in: ["submitted", "pricing", "paid"] } }
-          : { authorId: user.id, status: { in: ["draft", "rework", "submitted", "pricing", "review", "to_pay", "paid"] } },
-        orderBy: { updatedAt: "desc" },
-        take: 8,
-      })
-    : [];
+  const now = [
+    toAck.length
+      ? {
+          title: "Ознакомиться с бумагой",
+          count: toAck.length,
+          href: toAck.length === 1 ? `/documents/${toAck[0].documentId}` : "/documents?need=ack",
+          hint: toAck.length === 1 ? toAck[0].document.title : "ждут вас",
+        }
+      : null,
+    toSign.length
+      ? {
+          title: "Подписать и вернуть",
+          count: toSign.length,
+          href: toSign.length === 1 ? `/documents/${toSign[0].documentId}` : "/documents?need=sign",
+          hint: toSign.length === 1 ? toSign[0].document.title : "распечатать, подписать, загрузить скан",
+        }
+      : null,
+    toApprove.length
+      ? {
+          title: "Согласовать",
+          count: toApprove.length,
+          href: toApprove.length === 1 ? `/documents/${toApprove[0].documentId}` : "/documents?need=approve",
+          hint: toApprove.length === 1 ? toApprove[0].document.title : "ждут вашу визу",
+        }
+      : null,
+    can(user, "prod.view") && myProd.length
+      ? {
+          title: "Производство",
+          count: myProd.length,
+          href: myProd.length === 1 ? `/prod/tasks/${myProd[0].id}` : "/prod",
+          hint: myProd.length === 1 ? "открыть задачу" : "ваши задачи",
+        }
+      : null,
+    toReport.length
+      ? {
+          title: "Отчитаться по деньгам",
+          count: toReport.length,
+          href: "/advances/new",
+          hint: "собрать авансовый по выплатам",
+        }
+      : null,
+    chatUnread > 0
+      ? { title: "Чаты", count: chatUnread, href: "/chat", hint: "есть непрочитанные" }
+      : null,
+  ].filter(Boolean) as { title: string; count: number; href: string; hint: string }[];
 
-  const myHr = can(user, "hrdocs.create")
-    ? await prisma.hrRequest.findMany({
-        where: {
-          OR: [
-            { authorId: user.id, status: { in: ["draft", "signed", "rework", "review"] } },
-            { managerId: user.id, status: "review" },
-          ],
-        },
-        orderBy: { updatedAt: "desc" },
-        take: 8,
-      })
-    : [];
+  const latestDraft = drafts[0] || null;
 
   return (
     <div>
@@ -158,74 +200,68 @@ export default async function HomePage() {
         }
       />
 
-      <PresenceCard />
+      <Card>
+        <h2 className="font-serif text-xl text-navy">Сделать сейчас</h2>
+        {now.length === 0 ? (
+          <div className="mt-3">
+            <p className="text-sm text-muted">Пока ничего</p>
+            <Button href="/chat" variant="secondary" className="mt-3">
+              Открыть чаты
+            </Button>
+          </div>
+        ) : (
+          <ul className="mt-3 divide-y divide-line">
+            {now.map((item) => (
+              <li key={item.href + item.title}>
+                <Link href={item.href} className="flex items-center justify-between gap-3 py-3 hover:text-gold">
+                  <span>
+                    <span className="font-semibold">{item.title}</span>
+                    <span className="mt-0.5 block text-sm text-muted">{item.hint}</span>
+                  </span>
+                  <span className="font-serif text-2xl text-navy">{item.count}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {chatUnread > 0 ? <Stat title="Чаты" count={chatUnread} href="/chat" hot="ответьте" /> : null}
-        {toAck.length > 0 ? (
-          <Stat title="Ознакомиться с бумагой" count={toAck.length} href="/documents?need=ack" hot="ждут вас" />
-        ) : null}
-        {toSign.length > 0 ? (
-          <Stat title="Подписать и вернуть" count={toSign.length} href="/documents?need=sign" hot="ждут вас" />
-        ) : null}
-        {toApprove.length > 0 ? (
-          <Stat title="Согласовать" count={toApprove.length} href="/documents?need=approve" hot="ждут вас" />
-        ) : null}
-        {toReport.length > 0 ? (
-          <Stat title="Отчитаться по деньгам" count={toReport.length} href="/advances/new" hot="срок горит" />
-        ) : null}
-        {can(user, "prod.view") && myProd.length > 0 ? (
-          <Stat title="Производство" count={myProd.length} href="/prod" hot="ваши задачи" />
-        ) : null}
-        {can(user, "requests.create") && myRequests.length > 0 ? (
-          <Stat title="Запросы на закупку" count={myRequests.length} href="/requests" hot="в работе" />
-        ) : null}
-        {can(user, "hrdocs.create") && myHr.length > 0 ? (
-          <Stat title="Заявления" count={myHr.length} href="/statements" hot="в работе" />
-        ) : null}
-      </div>
-      {chatUnread === 0 &&
-      toAck.length === 0 &&
-      toSign.length === 0 &&
-      toApprove.length === 0 &&
-      toReport.length === 0 &&
-      myProd.length === 0 &&
-      myRequests.length === 0 &&
-      myHr.length === 0 ? (
-        <p className="mt-4 text-sm text-muted">Сейчас ничего не горит. Чаты и разделы — в меню слева.</p>
-      ) : null}
-
-      {drafts.length > 0 || waitingApprove.length > 0 ? (
-      <section className="mt-8 grid gap-6 lg:grid-cols-2">
-        <Card>
-          <h2 className="font-serif text-xl text-navy">Авансовые отчёты</h2>
-          <TaskList
-            items={drafts.map((d) => ({
-              href: `/advances/${d.id}`,
-              title: d.number,
-              meta: ADVANCE_STATUS[d.status]?.label || d.status,
-            }))}
-            empty="Нет черновиков."
-          />
-          {waitingApprove.length > 0 ? (
-            <div className="mt-4 border-t border-line pt-4">
-              <p className="mb-2 text-sm font-semibold text-muted">На вашем согласовании</p>
-              <TaskList
-                items={waitingApprove.map((d) => ({
-                  href: `/advances/${d.id}`,
-                  title: `${d.number} — ${d.user.lastName}`,
-                  meta: ADVANCE_STATUS[d.status]?.label,
-                }))}
-                empty=""
-              />
-            </div>
+      {latestDraft ? (
+        <Card className="mt-4">
+          <h2 className="font-serif text-xl text-navy">Авансовые</h2>
+          <Link href={`/advances/${latestDraft.id}`} className="mt-3 flex items-center justify-between gap-3 hover:text-gold">
+            <span>
+              <span className="font-semibold">Продолжить черновик</span>
+              <span className="mt-0.5 block text-sm text-muted">
+                {latestDraft.number} · {ADVANCE_STATUS[latestDraft.status]?.label || latestDraft.status}
+              </span>
+            </span>
+            <span className="text-sm text-gold">открыть</span>
+          </Link>
+          {drafts.length > 1 ? (
+            <Link href="/advances?status=draft" className="mt-2 inline-block text-sm text-gold underline">
+              все черновики ({drafts.length})
+            </Link>
           ) : null}
         </Card>
-      </section>
+      ) : null}
+
+      {waitingApprove.length > 0 ? (
+        <Card className="mt-4">
+          <h2 className="font-serif text-xl text-navy">На вашем согласовании</h2>
+          <TaskList
+            items={waitingApprove.map((d) => ({
+              href: `/advances/${d.id}`,
+              title: `${d.number} — ${d.user.lastName}`,
+              meta: ADVANCE_STATUS[d.status]?.label,
+            }))}
+            empty=""
+          />
+        </Card>
       ) : null}
 
       {toReport.length > 0 ? (
-        <Card className="mt-6">
+        <Card className="mt-4">
           <h2 className="font-serif text-xl text-navy">Нужно отчитаться</h2>
           <p className="text-sm text-muted">Деньги выданы по запросу средств — соберите авансовый отчёт.</p>
           <ReportFundsPicker
@@ -240,42 +276,57 @@ export default async function HomePage() {
         </Card>
       ) : null}
 
-      {events.length > 0 || fundsReview.length > 0 || fundsPay.length > 0 ? (
-        <section className="mt-6 grid gap-6 lg:grid-cols-2">
-          <Card>
-            <h2 className="font-serif text-xl text-navy">Ближайшие события</h2>
-            <TaskList
-              items={events.map((e) => ({
-                href: `/calendar#${e.id}`,
-                title: e.title,
-                meta: fmtDate(e.startsAt),
-              }))}
-              empty="На этой неделе пусто."
-            />
-          </Card>
-          <Card>
-            <h2 className="font-serif text-xl text-navy">Деньги на согласовании</h2>
-            <TaskList
-              items={[
-                ...fundsReview.map((f) => ({
-                  href: `/funds/${f.id}`,
-                  title: `${f.number} · ${f.purpose}`,
-                  meta: "на согласовании",
-                })),
-                ...fundsPay.map((f) => ({
-                  href: `/funds/${f.id}`,
-                  title: `${f.number} · ${f.purpose}`,
-                  meta: "к выплате",
-                })),
-              ]}
-              empty="Нет запросов на вас."
-            />
-          </Card>
-        </section>
+      {fundsReview.length > 0 || fundsPay.length > 0 ? (
+        <Card className="mt-4">
+          <h2 className="font-serif text-xl text-navy">Деньги на согласовании</h2>
+          <TaskList
+            items={[
+              ...fundsReview.map((f) => ({
+                href: `/funds/${f.id}`,
+                title: `${f.number} · ${f.purpose}`,
+                meta: "на согласовании",
+              })),
+              ...fundsPay.map((f) => ({
+                href: `/funds/${f.id}`,
+                title: `${f.number} · ${f.purpose}`,
+                meta: "к выплате",
+              })),
+            ]}
+            empty="Нет запросов на вас."
+          />
+        </Card>
+      ) : null}
+
+      {meetings.length > 0 ? (
+        <Card className="mt-4">
+          <h2 className="font-serif text-xl text-navy">Совещания</h2>
+          <TaskList
+            items={meetings.map((m) => ({
+              href: `/meet/${m.id}`,
+              title: m.title,
+              meta: `${fmtDate(m.startsAt)}${m.place ? ` · ${m.place}` : ""}${m.status === "live" ? " · идёт" : ""}`,
+            }))}
+            empty="Нет совещаний."
+          />
+        </Card>
+      ) : null}
+
+      {events.length > 0 ? (
+        <Card className="mt-4">
+          <h2 className="font-serif text-xl text-navy">Ближайшие события</h2>
+          <TaskList
+            items={events.map((e) => ({
+              href: `/calendar#${e.id}`,
+              title: e.title,
+              meta: fmtDate(e.startsAt),
+            }))}
+            empty="На этой неделе пусто."
+          />
+        </Card>
       ) : null}
 
       {birthdays.length > 0 ? (
-        <Card className="mt-6">
+        <Card className="mt-4">
           <h2 className="font-serif text-xl text-navy">Дни рождения</h2>
           <ul className="mt-3 divide-y divide-line">
             {birthdays.map((b) => (
@@ -296,13 +347,18 @@ export default async function HomePage() {
         </Card>
       ) : null}
 
-      <Card className="mt-6">
-        <h2 className="font-serif text-xl text-navy">Последние уведомления</h2>
-        {notes.length === 0 ? (
-          <p className="mt-3 text-muted">Пока тихо.</p>
+      <Card className="mt-4">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="font-serif text-xl text-navy">Уведомления</h2>
+          <Link href="/notifications" className="text-sm text-gold underline">
+            показать все
+          </Link>
+        </div>
+        {uniqueNotes.length === 0 ? (
+          <p className="mt-3 text-muted">Пока ничего</p>
         ) : (
           <ul className="mt-3 divide-y divide-line">
-            {notes.map((n) => (
+            {uniqueNotes.map((n) => (
               <li key={n.id} className="py-3">
                 <Link href={n.link || "/notifications"} className="block hover:text-gold">
                   <span className="font-semibold">{n.title}</span>
@@ -317,31 +373,6 @@ export default async function HomePage() {
   );
 }
 
-function Stat({
-  title,
-  count,
-  href,
-  hot,
-}: {
-  title: string;
-  count: number;
-  href: string;
-  hot?: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className={`rounded-2xl border bg-card p-5 shadow-[var(--shadow)] hover:border-gold ${
-        count > 0 && hot ? "border-gold" : "border-line"
-      }`}
-    >
-      <div className="text-sm text-muted">{title}</div>
-      <div className="mt-1 font-serif text-4xl text-navy">{count}</div>
-      {count > 0 ? <Pill tone="wait">{hot || "есть задачи"}</Pill> : <Pill tone="ok">пусто</Pill>}
-    </Link>
-  );
-}
-
 function TaskList({
   items,
   empty,
@@ -349,7 +380,7 @@ function TaskList({
   items: { href: string; title: string; meta?: string }[];
   empty: string;
 }) {
-  if (items.length === 0) return <p className="mt-3 text-muted">{empty}</p>;
+  if (items.length === 0) return empty ? <p className="mt-3 text-muted">{empty}</p> : null;
   return (
     <ul className="mt-3 divide-y divide-line">
       {items.map((i) => (

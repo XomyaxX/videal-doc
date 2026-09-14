@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Button, Card, ErrorText, Field, Input } from "@/components/ui";
+import { RememberCheck } from "../login/RememberCheck";
 
 export function SetupForm() {
   const [qr, setQr] = useState("");
@@ -9,6 +10,7 @@ export function SetupForm() {
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [remember, setRemember] = useState(true);
 
   useEffect(() => {
     void fetch("/api/auth/2fa/setup")
@@ -29,7 +31,7 @@ export function SetupForm() {
     const res = await fetch("/api/auth/2fa/confirm", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code }),
+      body: JSON.stringify({ code, remember }),
     });
     const data = await res.json().catch(() => ({}));
     setBusy(false);
@@ -70,6 +72,7 @@ export function SetupForm() {
             required
           />
         </Field>
+        <RememberCheck checked={remember} onChange={setRemember} />
         <Button type="submit" className="w-full" disabled={busy || code.length !== 6}>
           {busy ? "Проверяем…" : "Включить"}
         </Button>

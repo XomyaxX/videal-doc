@@ -21,6 +21,7 @@ import {
   Settings,
   Users,
   UserRound,
+  Video,
   X,
 } from "lucide-react";
 import { AccountSwitcher } from "./AccountSwitcher";
@@ -42,6 +43,7 @@ const NAV = [
   { href: "/prod", label: "Производство", icon: Clapperboard, perm: "prod.view" as const, section: "work" },
   { href: "/library", label: "Хранилище", icon: Library, perm: "prod.work" as const, section: "work" },
   { href: "/calendar", label: "Календарь", icon: CalendarDays, perm: null, section: "work" },
+  { href: "/meet", label: "Совещания", icon: Video, perm: null, section: "work" },
   { href: "/documents", label: "Документы", icon: FileText, perm: null, section: "papers" },
   { href: "/registry", label: "Журнал", icon: Inbox, perm: null, section: "papers" },
   { href: "/requests", label: "Запросы", icon: Package, perm: "requests.create" as const, section: "papers" },
@@ -102,22 +104,33 @@ function NavLink({
   );
 }
 
+const EMPLOYEE_PRIMARY = ["/", "/chat", "/prod", "/documents", "/finance", "/calendar", "/meet"];
+
+function slimEmployeeNav(user: SessionUser) {
+  return user.roleCode === "employee" && !userCan(user, "users.manage") && !userCan(user, "prod.manage");
+}
+
 export function AppShell({
   user,
   unread,
   chatUnread = 0,
   orgShort = "ООО «Видеаль Медиа»",
+  prodTaskCount = 0,
   children,
 }: {
   user: SessionUser;
   unread: number;
   chatUnread?: number;
   orgShort?: string;
+  prodTaskCount?: number;
   children: React.ReactNode;
 }) {
   const path = usePathname();
   const isChat = path.startsWith("/chat");
+  const slim = slimEmployeeNav(user);
   const items = NAV.filter((i) => !i.perm || userCan(user, i.perm));
+  const primary = slim ? items.filter((i) => EMPLOYEE_PRIMARY.includes(i.href)) : items;
+  const extra = slim ? items.filter((i) => !primary.some((p) => p.href === i.href)) : [];
   const [more, setMore] = useState(false);
   const [liveChat, setLiveChat] = useState(chatUnread);
   useEffect(() => {
@@ -149,27 +162,61 @@ export function AppShell({
           <div className="mt-1 text-xs text-white/60">Электронный документооборот</div>
         </div>
         <nav className="flex-1 space-y-3 overflow-y-auto px-3">
-          {SECTIONS.map((sec) => {
-            const rows = items.filter((i) => i.section === sec.id);
-            if (!rows.length) return null;
-            return (
-              <div key={sec.id}>
-                <div className="stamp px-3 pb-1 text-[10px] text-white/40">{sec.label}</div>
-                <div className="space-y-1">
-                  {rows.map((item) => (
-                    <NavLink
-                      key={item.href}
-                      href={item.href}
-                      label={item.label}
-                      icon={item.icon}
-                      path={path}
-                      badge={item.href === "/chat" ? liveChat : 0}
-                    />
-                  ))}
-                </div>
+          {slim ? (
+            <>
+              <div className="space-y-1">
+                {primary.map((item) => (
+                  <NavLink
+                    key={item.href}
+                    href={item.href}
+                    label={item.href === "/prod" ? "Мои задачи" : item.label}
+                    icon={item.icon}
+                    path={path}
+                    badge={item.href === "/chat" ? liveChat : item.href === "/prod" ? prodTaskCount : 0}
+                  />
+                ))}
               </div>
-            );
-          })}
+              {extra.length > 0 ? (
+                <div>
+                  <div className="stamp px-3 pb-1 text-[10px] text-white/40">Ещё</div>
+                  <div className="space-y-1">
+                    {extra.map((item) => (
+                      <NavLink
+                        key={item.href}
+                        href={item.href}
+                        label={item.label}
+                        icon={item.icon}
+                        path={path}
+                        badge={item.href === "/chat" ? liveChat : 0}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            SECTIONS.map((sec) => {
+              const rows = items.filter((i) => i.section === sec.id);
+              if (!rows.length) return null;
+              return (
+                <div key={sec.id}>
+                  <div className="stamp px-3 pb-1 text-[10px] text-white/40">{sec.label}</div>
+                  <div className="space-y-1">
+                    {rows.map((item) => (
+                      <NavLink
+                        key={item.href}
+                        href={item.href}
+                        label={item.label}
+                        icon={item.icon}
+                        path={path}
+                        badge={item.href === "/chat" ? liveChat : 0}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })
+          )}
         </nav>
         <div className="border-t border-white/10 p-3">
           <Link href="/notifications" className="mb-2 flex items-center gap-2 rounded-xl px-3 py-2 text-sm hover:bg-white/10">
@@ -243,8 +290,13 @@ export function AppShell({
                     {liveChat > 99 ? "99+" : liveChat}
                   </span>
                 ) : null}
+                {item.href === "/prod" && prodTaskCount > 0 ? (
+                  <span className="absolute -right-2 -top-1 min-w-4 rounded-full bg-gold px-1 text-center text-[10px] font-bold leading-4">
+                    {prodTaskCount > 99 ? "99+" : prodTaskCount}
+                  </span>
+                ) : null}
               </span>
-              {item.label === "Мне нужно" ? "Мне" : item.label}
+              {item.href === "/prod" ? "Задачи" : item.label === "Мне нужно" ? "Мне" : item.label}
             </Link>
           );
         })}

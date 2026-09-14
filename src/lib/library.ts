@@ -6,6 +6,7 @@ import { fileRoot, safeFilePart } from "./files";
 import { shareRoot, toUnc, canLeadProd } from "./prod";
 import { userCan, type SessionUser } from "./types";
 import { LIBRARY_KIND_EXT, LIBRARY_KIND_LABEL, libraryKindOk, previewMode } from "./library-kinds";
+import { storeGlbPreview } from "./glb-convert";
 
 export { LIBRARY_KINDS, LIBRARY_KIND_LABEL, libraryKindOk, previewMode } from "./library-kinds";
 export type { LibraryKind } from "./library-kinds";
@@ -35,6 +36,11 @@ const EXT_MIME: Record<string, string> = {
   ".webm": "video/webm",
   ".glb": "model/gltf-binary",
   ".gltf": "model/gltf+json",
+  ".blend": "application/x-blender",
+  ".fbx": "model/fbx",
+  ".obj": "model/obj",
+  ".stl": "model/stl",
+  ".abc": "application/octet-stream",
 };
 
 const BLOCKED = new Set([".exe", ".bat", ".cmd", ".com", ".msi", ".dll", ".sh", ".ps1", ".js", ".vbs", ".scr"]);
@@ -160,6 +166,7 @@ export async function saveLibraryItem(opts: {
     mimeType: string;
     size: number;
     fileId: string;
+    previewFileId: string;
     absPath: string;
     uncPath: string;
     sortOrder: number;
@@ -186,11 +193,26 @@ export async function saveLibraryItem(opts: {
       });
       fileId = saved.id;
     }
+    if (fileId) {
+      const capturedId = fileId;
+      const capturedBuf = file.buffer;
+      const capturedName = file.originalName;
+      void storeGlbPreview({
+        buffer: capturedBuf,
+        originalName: capturedName,
+        userId: opts.user.id,
+        maxBytes: opts.maxBytes,
+      }).then((pid) => {
+        if (!pid) return;
+        return prisma.libraryFile.updateMany({ where: { fileId: capturedId }, data: { previewFileId: pid } });
+      });
+    }
     savedFiles.push({
       originalName: path.basename(file.originalName).slice(0, 200),
       mimeType: mime,
       size: file.buffer.length,
       fileId,
+      previewFileId: "",
       absPath,
       uncPath: toUnc(absPath),
       sortOrder: i,
@@ -347,6 +369,7 @@ type FileRow = {
   mimeType: string;
   size: number;
   fileId: string;
+  previewFileId?: string;
   absPath: string;
   uncPath: string;
 };
@@ -405,7 +428,8 @@ export function serializeLibrary(row: {
     previewFileId: row.previewFileId,
   });
   const serializedFiles = files.map((f) => {
-    const preview = previewMode(f);
+    const preview = f.previewFileId ? "model3d" : previewMode(f);
+    const fileUrl = `/api/library/${row.id}/file/${f.id}`;
     return {
       id: f.id,
       originalName: f.originalName,
@@ -413,8 +437,9 @@ export function serializeLibrary(row: {
       size: f.size,
       uncPath: f.uncPath,
       preview,
-      fileUrl: `/api/library/${row.id}/file/${f.id}`,
-      thumbUrl: preview === "image" ? `/api/library/${row.id}/file/${f.id}` : "",
+      fileUrl,
+      previewUrl: f.previewFileId || preview === "model3d" ? `${fileUrl}${f.previewFileId ? "?preview=1" : ""}` : "",
+      thumbUrl: preview === "image" ? fileUrl : "",
     };
   });
   return {

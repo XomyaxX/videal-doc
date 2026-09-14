@@ -7,9 +7,9 @@ import { userCan } from "@/lib/types";
 import { assertInside, fileRoot } from "@/lib/files";
 import { shareRoot } from "@/lib/prod";
 import { previewMode } from "@/lib/library-kinds";
-import { canSeeTaskChat, loadChatTask, taskChatScope } from "@/lib/prod-chat";
+import { canSeeTaskChat, taskThreadKey } from "@/lib/prod-chat";
 
-export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string; fileId: string }> }) {
+export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string; fileId: string }> }) {
   const session = await getSession();
   if (!session || !userCan(session.user, "prod.view")) {
     return new NextResponse("Нет права", { status: 403 });
@@ -18,13 +18,22 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   if (!(await canSeeTaskChat(session.user, id))) {
     return new NextResponse("Нет права", { status: 403 });
   }
-  const task = await loadChatTask(id);
-  const scopeKey = task ? taskChatScope(task) : null;
-  if (!scopeKey) return new NextResponse("Нет чата", { status: 404 });
   const rec = await prisma.prodChatFile.findFirst({
-    where: { id: fileId, message: { scopeKey, deletedAt: null } },
+    where: { id: fileId, message: { scopeKey: taskThreadKey(id), deletedAt: null } },
   });
   if (!rec) return new NextResponse("Нет файла", { status: 404 });
+  if (req.nextUrl.searchParams.get("preview") === "1" && rec.previewFileId) {
+    const stored = await prisma.storedFile.findUnique({ where: { id: rec.previewFileId } });
+    if (stored) {
+      const buffer = await readFile(/* turbopackIgnore: true */ assertInside(fileRoot(), path.join(fileRoot(), stored.path)));
+      return new NextResponse(new Uint8Array(buffer), {
+        headers: {
+          "Content-Type": "model/gltf-binary",
+          "Cache-Control": "private, max-age=3600",
+        },
+      });
+    }
+  }
   try {
     let buffer: Buffer;
     let mime = rec.mimeType || "application/octet-stream";

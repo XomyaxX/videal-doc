@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
   const issuedAmount = fromFunds || (body.issuedAmount ? rubToKopecks(body.issuedAmount) : 0);
   const purpose =
     String(body.purpose || "").trim() || funds.map((f) => f.purpose).filter(Boolean).join("; ");
-  const number = await nextNumber("ao", "АО");
+  const number = await nextNumber("ao", "");
   const row = await prisma.advanceReport.create({
     data: {
       number,

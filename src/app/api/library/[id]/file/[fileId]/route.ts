@@ -21,10 +21,24 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
       ? item.files[0] || item
       : null);
   if (!row) return new NextResponse("Нет файла", { status: 404 });
+  const asPreview = _req.nextUrl.searchParams.get("preview") === "1";
+  if (asPreview && "previewFileId" in row && row.previewFileId) {
+    const { readStoredFile } = await import("@/lib/files");
+    const glb = await readStoredFile(String(row.previewFileId));
+    if (glb) {
+      return new NextResponse(new Uint8Array(glb.buffer), {
+        headers: {
+          "Content-Type": "model/gltf-binary",
+          "Content-Disposition": `inline; filename="preview.glb"`,
+          "Cache-Control": "private, max-age=3600",
+        },
+      });
+    }
+  }
   const file = await readLibraryBytes(row);
   if (!file) return new NextResponse("Файл не найден на диске", { status: 404 });
   const mode = previewMode(row);
-  const inline = mode !== "none";
+  const inline = mode !== "none" || asPreview;
   return new NextResponse(new Uint8Array(file.buffer), {
     headers: {
       "Content-Type": file.mime || "application/octet-stream",

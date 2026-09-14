@@ -436,7 +436,7 @@ export async function archiveHrScan(hrId: string) {
 export async function archivePurchase(purchaseId: string) {
   const row = await prisma.purchaseRequest.findUnique({
     where: { id: purchaseId },
-    include: { items: true },
+    include: { items: { include: { files: true } }, files: true },
   });
   if (!row) return null;
   const users = [row.authorId, row.ahoUserId].filter(Boolean) as string[];
@@ -452,19 +452,39 @@ export async function archivePurchase(purchaseId: string) {
       meta: { number: row.number, category: row.category, status: row.status },
     });
   }
-  for (const item of row.items) {
-    if (!item.fileId) continue;
+  const requestFiles = row.files.map((f) => f.fileId);
+  for (const fileId of requestFiles) {
     for (const userId of users) {
       await indexPersonDocument({
         userId,
         kind: "purchase",
-        title: `${row.number} · ${item.name}`,
+        title: `${row.number} · ${row.title}`,
         occurredAt: row.createdAt,
-        source: "purchase_item",
-        sourceId: item.id,
-        fileId: item.fileId,
+        source: "purchase_file",
+        sourceId: `${row.id}:${fileId}`,
+        fileId,
         link: `/requests/${row.id}`,
       });
+    }
+  }
+  for (const item of row.items) {
+    const ids = [
+      ...item.files.map((f) => f.fileId),
+      ...(item.fileId && !item.files.some((f) => f.fileId === item.fileId) ? [item.fileId] : []),
+    ];
+    for (const fileId of ids) {
+      for (const userId of users) {
+        await indexPersonDocument({
+          userId,
+          kind: "purchase",
+          title: `${row.number} · ${item.name}`,
+          occurredAt: row.createdAt,
+          source: "purchase_item",
+          sourceId: `${item.id}:${fileId}`,
+          fileId,
+          link: `/requests/${row.id}`,
+        });
+      }
     }
   }
 }

@@ -109,6 +109,7 @@ export function CalendarBoard({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [picked, setPicked] = useState(ymdOf(now));
   const [who, setWho] = useState<"me" | "dept" | "list">("me");
   const [selected, setSelected] = useState<string[]>([]);
@@ -131,6 +132,18 @@ export function CalendarBoard({
     load().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [year, month, scope]);
+
+  useEffect(() => {
+    if (!creating) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && !busy) {
+        setCreating(false);
+        setError("");
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [creating, busy]);
 
   const cells = useMemo(() => {
     const first = new Date(year, month, 1);
@@ -189,7 +202,7 @@ export function CalendarBoard({
       setError(data.error || "Не удалось создать");
       return;
     }
-    setOpen(false);
+    setCreating(false);
     await load();
   }
 
@@ -245,7 +258,8 @@ export function CalendarBoard({
             type="button"
             onClick={() => {
               setPicked(today);
-              setOpen(true);
+              setError("");
+              setCreating(true);
             }}
           >
             Новое событие
@@ -286,14 +300,34 @@ export function CalendarBoard({
                   const isToday = ymd === today;
                   const isPast = ymd < today;
                   return (
-                    <button
+                    <div
                       key={ymd}
-                      type="button"
+                      role="button"
+                      tabIndex={0}
                       onClick={() => {
                         setPicked(ymd);
-                        setOpen(true);
+                        setError("");
+                        if (isPast) {
+                          setCreating(false);
+                          setOpen(true);
+                          return;
+                        }
+                        setCreating(true);
                       }}
-                      className={`min-h-[118px] rounded-xl border p-2 text-left ${
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setPicked(ymd);
+                          setError("");
+                          if (isPast) {
+                            setCreating(false);
+                            setOpen(true);
+                            return;
+                          }
+                          setCreating(true);
+                        }
+                      }}
+                      className={`min-h-[118px] cursor-pointer rounded-xl border p-2 text-left ${
                         isToday ? "border-gold bg-white" : isPast ? "border-line bg-white/50 text-muted" : "border-line bg-card"
                       }`}
                     >
@@ -302,9 +336,26 @@ export function CalendarBoard({
                       </div>
                       <div className="mt-1 space-y-1" style={{ paddingTop: placed.length ? 6 + laneCount * 18 : 0 }}>
                         {evs.slice(0, 2).map((ev) => (
-                          <div
+                          <span
                             key={ev.id}
-                            className={`truncate rounded-md px-1.5 py-0.5 text-[11px] text-white ${
+                            role="link"
+                            tabIndex={0}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPicked(ymd);
+                              setCreating(false);
+                              setOpen(true);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setPicked(ymd);
+                                setCreating(false);
+                                setOpen(true);
+                              }
+                            }}
+                            className={`block truncate rounded-md px-1.5 py-0.5 text-[11px] text-white ${
                               ev.color === "gold"
                                 ? "bg-gold"
                                 : ev.color === "ok"
@@ -315,12 +366,14 @@ export function CalendarBoard({
                             }`}
                           >
                             {ev.title}
-                          </div>
+                          </span>
                         ))}
                         {extra.slice(0, 2).map((o) => (
-                          <div
+                          <a
                             key={o.href + o.label}
-                            className={`truncate rounded-md px-1.5 py-0.5 text-[11px] ${
+                            href={o.href}
+                            onClick={(e) => e.stopPropagation()}
+                            className={`block truncate rounded-md px-1.5 py-0.5 text-[11px] ${
                               o.tone === "ok"
                                 ? "bg-ok/15 text-ok"
                                 : o.tone === "wait"
@@ -331,10 +384,10 @@ export function CalendarBoard({
                             }`}
                           >
                             {o.label}
-                          </div>
+                          </a>
                         ))}
                       </div>
-                    </button>
+                    </div>
                   );
                 })}
               </div>
@@ -367,100 +420,26 @@ export function CalendarBoard({
 
       {open ? (
         <Card>
-          <h2 className="font-serif text-xl text-navy">Событие на {picked}</h2>
-          <ErrorText>{error}</ErrorText>
-          {picked < today ? (
-            <div className="mt-2 flex flex-wrap items-center gap-3">
-              <p className="text-sm text-muted">На прошедшую дату планировать нельзя — только просмотр.</p>
-              <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
-                Закрыть
+          <h2 className="font-serif text-xl text-navy">События на {picked}</h2>
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <p className="text-sm text-muted">
+              {picked < today ? "На прошедшую дату планировать нельзя — только просмотр." : "Новое событие откроется в окне."}
+            </p>
+            <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
+              Закрыть
+            </Button>
+            {picked >= today ? (
+              <Button
+                type="button"
+                onClick={() => {
+                  setError("");
+                  setCreating(true);
+                }}
+              >
+                Новое событие
               </Button>
-            </div>
-          ) : (
-          <form onSubmit={create} className="mt-4 grid gap-3 md:grid-cols-2">
-            <Field label="Название">
-              <Input name="title" required placeholder="Планерка, съёмка, встреча…" />
-            </Field>
-            <Field label="Цвет">
-              <Select name="color" defaultValue="navy">
-                {COLORS.map(([id, name]) => (
-                  <option key={id} value={id}>
-                    {name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <label className="flex items-center gap-2 text-sm md:col-span-2">
-              <input type="checkbox" name="allDay" defaultChecked /> Весь день
-            </label>
-            <Field label="Начало">
-              <Input name="startsAt" type="datetime-local" min={`${today}T00:00`} defaultValue={`${picked}T09:00`} />
-            </Field>
-            <Field label="Конец">
-              <Input name="endsAt" type="datetime-local" min={`${today}T00:00`} defaultValue={`${picked}T10:00`} />
-            </Field>
-            <div className="md:col-span-2">
-              <Field label="Описание">
-                <Textarea name="body" placeholder="Что планируем" />
-              </Field>
-            </div>
-            <div className="md:col-span-2">
-              <p className="mb-2 text-sm font-semibold text-navy">Участники</p>
-              <div className="mb-2 flex flex-wrap gap-2">
-                {(
-                  [
-                    ["me", "Только я"],
-                    ["dept", "Отдел"],
-                    ["list", "Выбрать людей"],
-                  ] as const
-                ).map(([id, label]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => setWho(id)}
-                    className={`rounded-xl px-3 py-1.5 text-sm font-semibold ${who === id ? "bg-navy !text-white" : "border border-line bg-white text-navy"}`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              {who === "dept" ? (
-                <Select name="departmentId">
-                  {departments.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name}
-                    </option>
-                  ))}
-                </Select>
-              ) : null}
-              {who === "list" ? (
-                <div className="max-h-48 overflow-auto rounded-xl border border-line bg-white p-2">
-                  {people.map((p) => {
-                    const on = selected.includes(p.id);
-                    return (
-                      <label key={p.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-paper">
-                        <input
-                          type="checkbox"
-                          checked={on}
-                          onChange={() => setSelected((prev) => (on ? prev.filter((x) => x !== p.id) : [...prev, p.id]))}
-                        />
-                        {personName(p)}
-                      </label>
-                    );
-                  })}
-                </div>
-              ) : null}
-            </div>
-            <div className="flex gap-2 md:col-span-2">
-              <Button type="submit" disabled={busy}>
-                {busy ? "Сохраняем…" : "Создать"}
-              </Button>
-              <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
-                Закрыть
-              </Button>
-            </div>
-          </form>
-          )}
+            ) : null}
+          </div>
           {itemsFor(picked).evs.length > 0 ? (
             <ul className="mt-4 divide-y divide-line">
               {itemsFor(picked).evs.map((ev) => (
@@ -476,14 +455,22 @@ export function CalendarBoard({
                     </div>
                   </div>
                   {ev.authorId === meId ? (
-                    <Button type="button" variant="danger" onClick={() => remove(ev.id)}>
+                    <Button
+                      type="button"
+                      variant="danger"
+                      onClick={() => {
+                        if (confirm("Удалить это событие?")) void remove(ev.id);
+                      }}
+                    >
                       Удалить
                     </Button>
                   ) : null}
                 </li>
               ))}
             </ul>
-          ) : null}
+          ) : (
+            <p className="mt-3 text-sm text-muted">Пока ничего</p>
+          )}
           {itemsFor(picked).extra.length > 0 ? (
             <ul className="mt-2 space-y-1 text-sm">
               {itemsFor(picked).extra.map((o) => (
@@ -496,6 +483,117 @@ export function CalendarBoard({
             </ul>
           ) : null}
         </Card>
+      ) : null}
+
+      {creating ? (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center p-0 sm:items-center sm:p-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-navy/50"
+            aria-label="Закрыть"
+            onClick={() => {
+              if (!busy) {
+                setCreating(false);
+                setError("");
+              }
+            }}
+          />
+          <Card className="relative z-10 max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl sm:rounded-2xl">
+            <h2 className="font-serif text-xl text-navy">Новое событие · {picked}</h2>
+            <ErrorText>{error}</ErrorText>
+            <form onSubmit={create} className="mt-4 grid gap-3 sm:grid-cols-2">
+              <Field label="Название">
+                <Input name="title" required placeholder="Планерка, съёмка, встреча…" />
+              </Field>
+              <Field label="Цвет">
+                <Select name="color" defaultValue="navy">
+                  {COLORS.map(([id, name]) => (
+                    <option key={id} value={id}>
+                      {name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <label className="flex items-center gap-2 text-sm sm:col-span-2">
+                <input type="checkbox" name="allDay" defaultChecked /> Весь день
+              </label>
+              <Field label="Начало">
+                <Input name="startsAt" type="datetime-local" min={`${today}T00:00`} defaultValue={`${picked}T09:00`} />
+              </Field>
+              <Field label="Конец">
+                <Input name="endsAt" type="datetime-local" min={`${today}T00:00`} defaultValue={`${picked}T10:00`} />
+              </Field>
+              <div className="sm:col-span-2">
+                <Field label="Описание">
+                  <Textarea name="body" placeholder="Что планируем" />
+                </Field>
+              </div>
+              <div className="sm:col-span-2">
+                <p className="mb-2 text-sm font-semibold text-navy">Участники</p>
+                <div className="mb-2 flex flex-wrap gap-2">
+                  {(
+                    [
+                      ["me", "Только я"],
+                      ["dept", "Отдел"],
+                      ["list", "Выбрать людей"],
+                    ] as const
+                  ).map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setWho(id)}
+                      className={`rounded-xl px-3 py-1.5 text-sm font-semibold ${who === id ? "bg-navy !text-white" : "border border-line bg-white text-navy"}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {who === "dept" ? (
+                  <Select name="departmentId">
+                    {departments.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </Select>
+                ) : null}
+                {who === "list" ? (
+                  <div className="max-h-48 overflow-auto rounded-xl border border-line bg-white p-2">
+                    {people.map((p) => {
+                      const on = selected.includes(p.id);
+                      return (
+                        <label key={p.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-paper">
+                          <input
+                            type="checkbox"
+                            checked={on}
+                            onChange={() => setSelected((prev) => (on ? prev.filter((x) => x !== p.id) : [...prev, p.id]))}
+                          />
+                          {personName(p)}
+                        </label>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+              <div className="flex gap-2 sm:col-span-2">
+                <Button type="submit" disabled={busy}>
+                  {busy ? "Сохраняем…" : "Создать"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={() => {
+                    setCreating(false);
+                    setError("");
+                  }}
+                >
+                  Отмена
+                </Button>
+              </div>
+            </form>
+          </Card>
+        </div>
       ) : null}
     </div>
   );

@@ -87,6 +87,21 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     return NextResponse.json({ ok: true });
   }
 
+  if (action === "delete" && mine && row.status === "draft") {
+    const fund = row.fundRequest;
+    if (fund && !["draft", "rework"].includes(fund.status)) {
+      return NextResponse.json(
+        { error: "Нельзя удалить: служебная записка уже на согласовании" },
+        { status: 400 },
+      );
+    }
+    if (fund) {
+      await prisma.fundRequest.delete({ where: { id: fund.id } });
+    }
+    await prisma.purchaseRequest.delete({ where: { id } });
+    return NextResponse.json({ ok: true, deleted: true });
+  }
+
   if (!aho) return NextResponse.json({ error: "Нет права АХО" }, { status: 403 });
 
   if (action === "take") {

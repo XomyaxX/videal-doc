@@ -41,6 +41,7 @@ export function NewTaskForm({
   const [assetKind, setAssetKind] = useState("prop");
   const [stage, setStage] = useState(template?.defaultStage || "task");
   const [assigneeId, setAssigneeId] = useState("");
+  const [helperId, setHelperId] = useState("");
   const [startsAt, setStartsAt] = useState("");
   const [dueAt, setDueAt] = useState("");
   const [comment, setComment] = useState("");
@@ -95,6 +96,7 @@ export function NewTaskForm({
         newAssetKind: kind === "asset" ? assetKind : undefined,
         skillCodes: template?.skillCodes || [],
         assigneeId,
+        helperId: helperId && helperId !== assigneeId ? helperId : undefined,
         startsAt,
         dueAt,
         comment,
@@ -221,6 +223,18 @@ export function NewTaskForm({
               {p.name}
             </option>
           ))}
+        </Select>
+      </Field>
+      <Field label="Суб-исполнитель" hint="Необязательно. Работает вместе с главным, баллы остаются главному.">
+        <Select value={helperId} onChange={(e) => setHelperId(e.target.value)}>
+          <option value="">нет</option>
+          {people
+            .filter((p) => p.id !== assigneeId)
+            .map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
         </Select>
       </Field>
       <div className="grid gap-3 sm:grid-cols-2">

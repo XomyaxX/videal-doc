@@ -55,13 +55,33 @@ function extOf(name: string) {
   return i >= 0 ? name.slice(i).toLowerCase() : "";
 }
 
-export function previewMode(opts: { mimeType: string; originalName: string; previewFileId?: string }) {
-  if (opts.previewFileId) return "image" as const;
+const CONVERT_3D = new Set([".blend", ".fbx", ".obj", ".stl", ".abc"]);
+
+export function needsGlbPreview(originalName: string) {
+  return CONVERT_3D.has(extOf(originalName));
+}
+
+export function isModel3dName(originalName: string, mime = "") {
+  const ext = extOf(originalName);
+  return (
+    needsGlbPreview(originalName) ||
+    ext === ".glb" ||
+    ext === ".gltf" ||
+    mime === "model/gltf-binary" ||
+    mime === "model/gltf+json"
+  );
+}
+
+export type PreviewKind = "image" | "pdf" | "video" | "model3d" | "none";
+
+export function previewMode(opts: { mimeType: string; originalName: string; previewFileId?: string }): PreviewKind {
+  if (opts.previewFileId) return "image";
   const ext = extOf(opts.originalName);
   const mime = opts.mimeType || "";
-  if (mime.startsWith("image/") && mime !== "image/tiff") return "image" as const;
-  if (ext === ".svg" || mime === "image/svg+xml") return "image" as const;
-  if (mime === "application/pdf" || ext === ".pdf") return "pdf" as const;
-  if (mime.startsWith("video/") || ext === ".mp4" || ext === ".webm") return "video" as const;
-  return "none" as const;
+  if (mime.startsWith("image/") && mime !== "image/tiff") return "image";
+  if (ext === ".svg" || mime === "image/svg+xml") return "image";
+  if (mime === "application/pdf" || ext === ".pdf") return "pdf";
+  if (mime.startsWith("video/") || ext === ".mp4" || ext === ".webm") return "video";
+  if (mime === "model/gltf-binary" || mime === "model/gltf+json" || ext === ".glb" || ext === ".gltf") return "model3d";
+  return "none";
 }

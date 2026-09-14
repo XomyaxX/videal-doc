@@ -9,6 +9,7 @@ import {
   setDevicePin,
   type SavedAccount,
 } from "@/lib/accounts-client";
+import { RememberCheck } from "./RememberCheck";
 
 function nextAfterLogin(
   data: { mustChangePassword?: boolean; need2faSetup?: boolean; need2fa?: boolean },
@@ -37,6 +38,7 @@ export function LoginForm({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [showForm, setShowForm] = useState(add);
+  const [remember, setRemember] = useState(true);
 
   useEffect(() => {
     try {
@@ -47,7 +49,7 @@ export function LoginForm({
     setLocked(Boolean(getDevicePin()));
     void fetchDeviceAccounts().then((list) => {
       setAccounts(list);
-      if (add || list.length === 0) setShowForm(true);
+      setShowForm(true);
     });
   }, [add]);
 
@@ -66,7 +68,7 @@ export function LoginForm({
     const res = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ login, password }),
+      body: JSON.stringify({ login, password, remember }),
     });
     const data = await res.json();
     setBusy(false);
@@ -110,7 +112,7 @@ export function LoginForm({
     <Card className="w-full max-w-md">
       <div className="stamp text-xs text-gold">{orgShort}</div>
       <h1 className="font-serif text-3xl text-navy">Видеал.Док</h1>
-      <p className="mt-1 text-muted">Войдите в свою учётку или переключитесь на сохранённую.</p>
+      <p className="mt-1 text-muted">Войдите логином и паролем.</p>
 
       {accounts.length > 0 && !showForm ? (
         <div className="mt-5 space-y-2">
@@ -145,6 +147,7 @@ export function LoginForm({
               required
             />
           </Field>
+          <RememberCheck checked={remember} onChange={setRemember} />
           <Button type="submit" className="w-full" disabled={busy}>
             {busy ? "Входим…" : "Войти"}
           </Button>

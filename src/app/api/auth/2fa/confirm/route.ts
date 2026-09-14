@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { DEVICE_COOKIE, complete2fa, getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { totpOk } from "@/lib/totp";
 import { revealSecret } from "@/lib/secret";
@@ -17,7 +17,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Неверный код" }, { status: 400 });
   }
   await prisma.user.update({ where: { id: session.user.id }, data: { totpEnabled: true } });
-  await prisma.session.updateMany({ where: { token: session.token }, data: { totpOk: true } });
+  await complete2fa({
+    token: session.token,
+    userId: session.user.id,
+    deviceId: req.cookies.get(DEVICE_COOKIE)?.value || "",
+    userAgent: req.headers.get("user-agent") || "",
+    remember: body?.remember !== false,
+  });
   await audit({ userId: session.user.id, action: "2fa.enable", entity: "user", entityId: session.user.id });
   return NextResponse.json({ ok: true });
 }

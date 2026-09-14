@@ -5,11 +5,10 @@ import { prisma } from "@/lib/prisma";
 import { Card, PageHeader, Pill } from "@/components/ui";
 import { ADVANCE_STATUS } from "@/lib/status";
 import { formatMoney, kopecksToRub } from "@/lib/money";
-import { fmtDateTime } from "@/lib/dates";
 import { fullName } from "@/lib/names";
 import { AdvancePanel } from "./AdvancePanel";
 import { AddReceipts } from "./AddReceipts";
-import { RemoveReceipt } from "./RemoveReceipt";
+import { ReceiptItem } from "./ReceiptItem";
 import { USER_SAFE_ORG_SELECT } from "@/lib/user-public";
 
 export default async function AdvancePage({ params }: { params: Promise<{ id: string }> }) {
@@ -64,46 +63,30 @@ export default async function AdvancePage({ params }: { params: Promise<{ id: st
           {report.receipts.length === 0 && !canEdit ? (
             <Card>Пока нет расходов.</Card>
           ) : (
-            report.receipts.map((r) => (
-              <Card key={r.id}>
-                <div className="flex gap-4">
-                  {r.sourceFileId ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={`/api/files/${r.sourceFileId}?preview=1`}
-                      alt=""
-                      className="h-24 w-20 rounded-lg object-cover bg-paper"
-                    />
-                  ) : null}
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="font-semibold">{r.merchant || "Расход"}</div>
-                      {canEdit ? <RemoveReceipt reportId={report.id} receiptId={r.id} /> : null}
-                    </div>
-                    <div className="text-sm text-muted">{fmtDateTime(r.occurredAt)}</div>
-                    <div className="text-lg">{formatMoney(r.amount)}</div>
-                    <div className="text-xs text-muted">
-                      {r.fn ? `ФН ${r.fn} · ФД ${r.fd || "—"} · ФП ${r.fp || "—"}` : r.fd ? `№ ${r.fd}` : "без QR"}
-                    </div>
-                    {r.note ? <div className="text-sm">{r.note}</div> : null}
-                    {(() => {
-                      const ids = [r.sourceFileId, ...r.files.map((f) => f.fileId)].filter(Boolean);
-                      const unique = [...new Set(ids)];
-                      if (unique.length === 0) return null;
-                      return (
-                        <div className="mt-1 flex flex-wrap gap-2">
-                          {unique.map((fid, i) => (
-                            <a key={fid} className="text-xs text-gold underline" href={`/api/files/${fid}`}>
-                              {unique.length === 1 ? "вложение" : `документ ${i + 1}`}
-                            </a>
-                          ))}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                </div>
-              </Card>
-            ))
+            report.receipts.map((r) => {
+              const ids = [r.sourceFileId, ...r.files.map((f) => f.fileId)].filter(Boolean);
+              const unique = [...new Set(ids)];
+              return (
+                <Card key={r.id}>
+                  <ReceiptItem
+                    reportId={report.id}
+                    canEdit={canEdit}
+                    receipt={{
+                      id: r.id,
+                      merchant: r.merchant,
+                      amount: r.amount,
+                      occurredAt: r.occurredAt ? r.occurredAt.toISOString() : null,
+                      fn: r.fn,
+                      fd: r.fd,
+                      fp: r.fp,
+                      note: r.note,
+                      sourceFileId: r.sourceFileId,
+                      fileIds: unique,
+                    }}
+                  />
+                </Card>
+              );
+            })
           )}
         </div>
         <Card>
@@ -118,6 +101,7 @@ export default async function AdvancePage({ params }: { params: Promise<{ id: st
               issued={kopecksToRub(report.issuedAmount)}
               canEdit={canEdit}
               canApprove={can(user, "finance.approve")}
+              canRecall={report.userId === user.id && report.status === "review"}
               accountantEmail={settings?.accountantEmail || "vidial_kiv@mail.ru"}
             />
           </div>

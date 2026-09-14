@@ -42,6 +42,7 @@ export function NewAdvanceForm({ funds, preselect }: { funds: FundOpt[]; presele
   }
 
   async function submit() {
+    if (!confirm("Создать черновик отчёта и перейти к чекам?")) return;
     setBusy(true);
     setError("");
     if (funds.length > 0 && selected.length === 0) {
@@ -69,11 +70,14 @@ export function NewAdvanceForm({ funds, preselect }: { funds: FundOpt[]; presele
 
   return (
     <div className="max-w-xl space-y-4">
+      <p className="text-sm text-muted">Шаг 1 из 3 · выбрать выплаты и назначение. Дальше — чеки. Потом сдать на проверку.</p>
       <ErrorText>{error}</ErrorText>
       {funds.length > 0 ? (
         <Card>
           <h2 className="font-serif text-xl text-navy">Запросы в этом отчёте</h2>
-          <p className="mt-1 text-sm text-muted">После создания приложите чеки: QR или расход с нуля.</p>
+          <p className="mt-1 text-sm text-muted">
+            После создания приложите чеки: QR из приложения банка (ФНС) или расход без QR — сумма руками.
+          </p>
           <div className="mt-3 space-y-3">
             {groups.map(([label, rows]) => (
               <div key={label} className="rounded-xl border border-line bg-white p-2">
@@ -123,7 +127,7 @@ export function NewAdvanceForm({ funds, preselect }: { funds: FundOpt[]; presele
         </Field>
       </Card>
       <Button type="button" disabled={busy || (funds.length > 0 && selected.length === 0)} onClick={submit} className="h-12 px-8">
-        {busy ? "Создаём…" : "Дальше: приложить чеки"}
+        {busy ? "Создаём…" : "Создать черновик и продолжить"}
       </Button>
     </div>
   );

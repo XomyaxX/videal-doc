@@ -9,7 +9,7 @@ import {
   loadChatTask,
   postTaskChatMessage,
   serializeProdChatFile,
-  taskChatScope,
+  taskThreadKey,
 } from "@/lib/prod-chat";
 
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -22,8 +22,8 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     return NextResponse.json({ error: "Нет права" }, { status: 403 });
   }
   const task = await loadChatTask(id);
-  const scopeKey = task ? taskChatScope(task) : null;
-  if (!scopeKey) return NextResponse.json({ rows: [] });
+  if (!task) return NextResponse.json({ rows: [] });
+  const scopeKey = taskThreadKey(id);
   const rows = await prisma.prodChatMessage.findMany({
     where: { scopeKey, deletedAt: null },
     include: {

@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState, type DragEvent } from "react";
+import { createContext, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronDown, Clapperboard, Film, GripVertical, Plus, Sparkles, Trash2 } from "lucide-react";
@@ -11,10 +12,12 @@ import {
   STAGE_LABEL,
   STATUS_LABEL,
   STATUS_PILL,
+  pctBarClass,
   stagesForAssetKind,
 } from "@/lib/prod";
 import { SKILL_LABEL } from "@/lib/pipeline";
 import { allStageSort, specForKind, skillsForKindStage, type KindSpec } from "@/lib/prod-kinds";
+import { fmtDate } from "@/lib/dates";
 
 const KindCtx = createContext<KindSpec>(specForKind("e02"));
 function useKind() {
@@ -24,10 +27,18 @@ function useKind() {
 export type Person = { id: string; name: string; skillCodes: string[] };
 export type TaskChip = {
   id: string;
+  kind: string;
   stage: string;
   status: string;
+  title: string;
+  dueAt: string | null;
+  blockedReason: string;
   assigneeId: string | null;
   assigneeName: string | null;
+  shotCode: string | null;
+  sceneCode: string | null;
+  sceneTitle: string | null;
+  assetName: string | null;
 };
 export type ShotNode = {
   id: string;
@@ -69,13 +80,30 @@ function missing(tasks: TaskChip[], stages: readonly string[]) {
   return stages.filter((s) => !have.has(s));
 }
 
+function ringGradient(slices: { status: string; pct: number }[]) {
+  if (!slices.length) return "conic-gradient(var(--st-empty) 0 100%)";
+  const stops: string[] = [];
+  let from = 0;
+  for (const s of slices) {
+    const to = Math.min(100, from + s.pct);
+    if (to <= from) continue;
+    stops.push(`var(--st-${s.status}) ${from}% ${to}%`);
+    from = to;
+  }
+  if (from < 100) stops.push(`var(--st-empty) ${from}% 100%`);
+  return `conic-gradient(${stops.join(", ")})`;
+}
+
 function barColor(status?: string) {
-  if (status === "approved" || status === "na") return "bg-[var(--ok)]";
-  if (status === "done") return "bg-[var(--warn)]";
-  if (status === "wip") return "bg-[var(--wait)]";
-  if (status === "revise" || status === "blocked") return "bg-[var(--bad)]";
+  if (status === "approved") return "bg-[var(--st-approved)]";
+  if (status === "todo") return "bg-[var(--st-todo)]";
+  if (status === "done") return "bg-[var(--st-done)]";
+  if (status === "wip") return "bg-[var(--st-wip)]";
+  if (status === "revise") return "bg-[var(--st-revise)]";
+  if (status === "blocked") return "bg-[var(--st-blocked)]";
+  if (status === "na") return "bg-[var(--st-na)]";
   if (status) return "bg-navy-2";
-  return "bg-[#ddd6c8]";
+  return "bg-[var(--st-empty)]";
 }
 
 function Slider({
@@ -92,6 +120,7 @@ function Slider({
   label: string;
 }) {
   const pct = max === min ? 100 : ((value - min) / (max - min)) * 100;
+  const id = useId();
   return (
     <label className="block">
       <span className="mb-1.5 flex items-baseline justify-between text-sm font-semibold text-navy">
@@ -99,6 +128,8 @@ function Slider({
         <span className="tabular-nums text-gold">{value}</span>
       </span>
       <input
+        id={id}
+        name={id}
         type="range"
         min={min}
         max={max}
@@ -195,6 +226,7 @@ function OrderBar({
   onArm?: (v: boolean) => void;
 }) {
   const [val, setVal] = useState(String(index + 1));
+  const id = useId();
   useEffect(() => {
     setVal(String(index + 1));
   }, [index]);
@@ -223,9 +255,13 @@ function OrderBar({
         </button>
       ) : null}
       <input
+        id={id}
+        name={id}
         className="h-7 w-8 rounded-md border border-line bg-white text-center text-xs font-semibold tabular-nums text-navy"
         value={val}
         disabled={disabled}
+        autoComplete="off"
+        inputMode="numeric"
         onChange={(e) => setVal(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
@@ -252,7 +288,95 @@ function familyName(name: string | null) {
   return name?.trim().split(/\s+/)[0] || "не назначен";
 }
 
+const KIND_WHERE: Record<string, string> = {
+  episode: "Этап серии",
+  scene: "Этап сцены",
+  shot: "Шот",
+  asset: "Ассет",
+  job: "Крупная задача",
+  task: "Задача",
+};
+
+function taskWhere(t: TaskChip) {
+  if (t.shotCode) {
+    const scene = t.sceneCode ? `${t.sceneCode}${t.sceneTitle ? ` · ${t.sceneTitle}` : ""}` : "";
+    return scene ? `${scene} · ${t.shotCode}` : t.shotCode;
+  }
+  if (t.assetName) return t.assetName;
+  if (t.sceneCode) return t.sceneTitle ? `${t.sceneCode} · ${t.sceneTitle}` : t.sceneCode;
+  if (t.title.trim()) return t.title.trim();
+  return KIND_WHERE[t.kind] || "Задача";
+}
+
+function taskAria(t: TaskChip) {
+  const bits = [
+    STAGE_LABEL[t.stage] || t.stage,
+    STATUS_LABEL[t.status] || t.status,
+    taskWhere(t),
+    t.assigneeName || "не назначен",
+  ];
+  if (t.dueAt) bits.push(`срок ${fmtDate(t.dueAt)}`);
+  if (t.status === "blocked" && t.blockedReason.trim()) bits.push(t.blockedReason.trim());
+  return bits.join(", ");
+}
+
+function TaskTip({ task, x, y }: { task: TaskChip; x: number; y: number }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState({ left: x, top: y, below: false, ready: false });
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const pad = 10;
+    let left = x;
+    let below = y < r.height + 16;
+    let top = below ? y + 14 : y - 8;
+    const half = r.width / 2;
+    if (left - half < pad) left = pad + half;
+    if (left + half > window.innerWidth - pad) left = window.innerWidth - pad - half;
+    if (!below && top - r.height < pad) {
+      below = true;
+      top = y + 14;
+    }
+    setBox({ left, top, below, ready: true });
+  }, [task.id, x, y]);
+  const stage = STAGE_LABEL[task.stage] || task.stage;
+  const status = STATUS_LABEL[task.status] || task.status;
+  const where = taskWhere(task);
+  return createPortal(
+    <div
+      ref={ref}
+      role="tooltip"
+      className="pointer-events-none fixed z-[80] w-[16.5rem] max-w-[calc(100vw-1.25rem)] rounded-xl border border-line bg-card px-3 py-2.5 shadow-[var(--shadow)]"
+      style={{
+        left: box.left,
+        top: box.top,
+        transform: box.below ? "translate(-50%, 0)" : "translate(-50%, -100%)",
+        opacity: box.ready ? 1 : 0,
+      }}
+    >
+      <div className="font-serif text-lg leading-tight text-navy">{stage}</div>
+      <div className="mt-0.5 text-[12px] leading-snug text-muted">{where}</div>
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <Pill tone={STATUS_PILL[task.status] || "draft"}>{status}</Pill>
+        {KIND_WHERE[task.kind] && task.kind !== "shot" ? (
+          <span className="text-[11px] text-muted">{KIND_WHERE[task.kind]}</span>
+        ) : null}
+      </div>
+      <div className="mt-1.5 text-[12px] text-navy">{task.assigneeName || "не назначен"}</div>
+      {task.dueAt ? <div className="mt-0.5 text-[11px] text-muted">срок {fmtDate(task.dueAt)}</div> : null}
+      {task.status === "blocked" && task.blockedReason.trim() ? (
+        <div className="mt-1 text-[11px] leading-snug text-bad">{task.blockedReason.trim()}</div>
+      ) : null}
+    </div>,
+    document.body,
+  );
+}
+
 function StagePills({ tasks }: { tasks: TaskChip[] }) {
+  const [tip, setTip] = useState<{ task: TaskChip; x: number; y: number } | null>(null);
+  const hideTimer = useRef<number>(0);
+  useEffect(() => () => window.clearTimeout(hideTimer.current), []);
   if (!tasks.length) return <span className="text-xs text-muted">этапов ещё нет</span>;
   const groups = new Map<string, TaskChip[]>();
   for (const t of tasks) {
@@ -270,8 +394,17 @@ function StagePills({ tasks }: { tasks: TaskChip[] }) {
     const i = STAGE_SORT.indexOf(stage as (typeof STAGE_SORT)[number]);
     return i < 0 ? 99 : i;
   }
+  function show(t: TaskChip, el: HTMLElement) {
+    window.clearTimeout(hideTimer.current);
+    const r = el.getBoundingClientRect();
+    setTip({ task: t, x: r.left + r.width / 2, y: r.top });
+  }
+  function hide() {
+    window.clearTimeout(hideTimer.current);
+    hideTimer.current = window.setTimeout(() => setTip(null), 80);
+  }
   return (
-    <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,11rem),1fr))] gap-2">
+    <div className="grid w-full min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,13.5rem),1fr))] gap-3">
       {names.map((name) => {
         const list = groups.get(name) || [];
         const byStage = new Map<string, TaskChip[]>();
@@ -283,22 +416,27 @@ function StagePills({ tasks }: { tasks: TaskChip[] }) {
         const stages = [...byStage.keys()].sort((a, b) => rank(a) - rank(b));
         const full = list.find((t) => t.assigneeName)?.assigneeName || name;
         return (
-          <div key={name} className="min-w-0 rounded-xl border border-line bg-paper p-3">
+          <div key={name} className="min-w-0 overflow-hidden rounded-xl border border-line bg-paper p-3">
             <div className="truncate font-semibold text-navy" title={full}>
               {name}
             </div>
             <div className="mt-1.5 space-y-1">
               {stages.map((stage) => (
-                <div key={stage} className="flex min-w-0 items-start gap-2">
-                  <span className="w-[4.75rem] shrink-0 text-[11px] leading-4 text-muted">{STAGE_LABEL[stage] || stage}</span>
-                  <span className="flex min-w-0 flex-1 flex-wrap content-start gap-0.5 pt-px">
+                <div key={stage} className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2">
+                  <span className="shrink-0 whitespace-nowrap pt-px text-[11px] leading-4 text-muted">
+                    {STAGE_LABEL[stage] || stage}
+                  </span>
+                  <span className="flex min-w-0 flex-wrap content-start gap-1 pt-px">
                     {(byStage.get(stage) || []).map((t) => (
                       <Link
                         key={t.id}
                         href={`/prod/tasks/${t.id}`}
-                        title={`${STAGE_LABEL[t.stage] || t.stage} · ${STATUS_LABEL[t.status] || t.status}`}
-                        aria-label={`${STAGE_LABEL[t.stage] || t.stage}, ${STATUS_LABEL[t.status] || t.status}`}
-                        className={`block h-3 w-3 shrink-0 rounded-[3px] ${barColor(t.status)} hover:ring-2 hover:ring-inset hover:ring-gold`}
+                        aria-label={taskAria(t)}
+                        onMouseEnter={(e) => show(t, e.currentTarget)}
+                        onMouseLeave={hide}
+                        onFocus={(e) => show(t, e.currentTarget)}
+                        onBlur={hide}
+                        className={`block h-3 w-3 shrink-0 rounded-[3px] ${barColor(t.status)} hover:ring-2 hover:ring-inset hover:ring-gold focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gold`}
                       />
                     ))}
                   </span>
@@ -308,6 +446,7 @@ function StagePills({ tasks }: { tasks: TaskChip[] }) {
           </div>
         );
       })}
+      {tip ? <TaskTip task={tip.task} x={tip.x} y={tip.y} /> : null}
     </div>
   );
 }
@@ -327,6 +466,10 @@ export function BreakdownBoard({
     scenesPct: number;
     assetsPct: number;
     preprodPct: number;
+    scenesShare?: number;
+    assetsShare?: number;
+    preprodShare?: number;
+    slices?: { status: string; label: string; pct: number }[];
     tasks: TaskChip[];
     scenes: SceneNode[];
     assets: AssetNode[];
@@ -393,7 +536,7 @@ export function BreakdownBoard({
 
   return (
     <KindCtx.Provider value={spec}>
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6 overflow-x-hidden">
       <ErrorText>{error}</ErrorText>
       {note ? (
         <p className="bd-pop rounded-xl bg-[var(--ok-bg)] px-3 py-2 text-sm text-[var(--ok)]">{note}</p>
@@ -401,17 +544,40 @@ export function BreakdownBoard({
 
       <Card className="bd-card overflow-hidden">
         <div className="flex flex-wrap items-center gap-5">
-          <div className="bd-ring" style={{ ["--p" as string]: episode.pct }}>
+          <div className="bd-ring" style={{ background: ringGradient(episode.slices || []) }}>
             <span>{episode.pct}%</span>
           </div>
-          <div className="min-w-[200px] flex-1">
+          <div className="min-w-0 flex-1 basis-[12rem]">
             <div className="text-xs font-semibold uppercase tracking-[0.14em] text-gold">Съёмка серии</div>
             <h2 className="font-serif text-3xl text-navy">
               {episode.showName} · {episode.code}
             </h2>
             <p className="mt-1 text-sm text-muted">
-              {episode.name} · препродакшн {episode.preprodPct}% · сцены {episode.scenesPct}% · ассеты {episode.assetsPct}%
+              {episode.name}
+              {" · "}
+              препрод {episode.preprodPct}% готов
+              {typeof episode.preprodShare === "number" ? ` (${episode.preprodShare}% веса)` : ""}
+              {" · "}
+              сцены {episode.scenesPct}%
+              {typeof episode.scenesShare === "number" ? ` (${episode.scenesShare}% веса)` : ""}
+              {" · "}
+              ассеты {episode.assetsPct}%
+              {typeof episode.assetsShare === "number" ? ` (${episode.assetsShare}% веса)` : ""}
             </p>
+            {(episode.slices || []).length ? (
+              <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted">
+                {(episode.slices || []).map((s) => (
+                  <span key={s.status} className="inline-flex items-center gap-1.5">
+                    <i className="h-2 w-2 shrink-0 rounded-[2px]" style={{ background: `var(--st-${s.status})` }} />
+                    {s.label} {s.pct}
+                  </span>
+                ))}
+                <span className="inline-flex items-center gap-1.5">
+                  <i className="h-2 w-2 shrink-0 rounded-[2px] bg-[var(--st-empty)]" />
+                  не готово
+                </span>
+              </div>
+            ) : null}
           </div>
           {canEdit ? (
             <Button
@@ -595,7 +761,7 @@ function SceneComposer({
             label="Шотов в сцене"
           />
           <label className="flex items-center gap-2 text-sm text-navy">
-            <input type="checkbox" checked={spawn} onChange={(e) => setSpawn(e.target.checked)} />
+            <input id="spawn-scene-stages" name="spawn-scene-stages" type="checkbox" checked={spawn} onChange={(e) => setSpawn(e.target.checked)} />
             {spec.sceneSpawnHint}
             <span className="text-muted">
               ({spec.sceneStages.length + shots * spec.shotTaskCount} задач)
@@ -698,42 +864,55 @@ function SceneBlock({
         setArmed(false);
       }}
     >
-      <div className="flex w-full flex-wrap items-center gap-3 px-5 py-4">
-        <button type="button" onClick={onToggle} className="flex min-w-0 flex-1 items-center gap-3 text-left">
-          <ChevronDown size={18} className={`shrink-0 text-gold transition-transform ${open ? "rotate-0" : "-rotate-90"}`} />
-          <Clapperboard size={18} className="shrink-0 text-navy" />
-          <div className="min-w-0 flex-1">
-            <div className="font-serif text-2xl text-navy">
-              {scene.code} · {scene.title}
+      <div className="flex w-full min-w-0 flex-col gap-3 px-4 py-4 sm:flex-row sm:flex-wrap sm:items-center sm:px-5">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex w-full min-w-0 flex-col gap-1 text-left sm:w-auto sm:min-w-0 sm:flex-1 sm:flex-row sm:items-center sm:gap-3"
+        >
+          <span className="flex shrink-0 items-center gap-2">
+            <ChevronDown size={18} className={`shrink-0 text-gold transition-transform ${open ? "rotate-0" : "-rotate-90"}`} />
+            <Clapperboard size={18} className="shrink-0 text-navy" />
+            <span className="font-serif text-xl text-navy sm:hidden">{scene.code}</span>
+          </span>
+          <div className="min-w-0 w-full sm:flex-1">
+            <div className="bd-scene-title whitespace-normal break-words font-serif text-xl leading-snug text-navy sm:text-2xl">
+              <span className="hidden sm:inline">{scene.code} · </span>
+              {scene.title}
             </div>
-            <div className="text-sm text-muted">
+            <div className="bd-scene-title mt-0.5 whitespace-normal break-words text-xs leading-snug text-muted sm:text-sm">
               {scene.shots.length} шотов · вклад в серию {scene.share}% · {scene.pct}%
             </div>
           </div>
         </button>
         <div className="hidden w-40 sm:block">
           <div className="h-2 overflow-hidden rounded-full bg-[#ddd6c8]">
-            <div className="h-full rounded-full bg-gold transition-[width] duration-500" style={{ width: `${scene.pct}%` }} />
+            <div
+              className={`h-full rounded-full transition-[width] duration-500 ${pctBarClass(scene.pct)}`}
+              style={{ width: `${scene.pct}%` }}
+            />
           </div>
         </div>
-        {miss > 0 ? (
-          <span className="rounded-full bg-[#fff8ec] px-2 py-0.5 text-xs font-semibold text-gold">{miss} не хватает</span>
-        ) : null}
-        {canEdit ? (
-          <OrderBar
-            index={index}
-            total={total}
-            disabled={busy}
-            onMove={(to) => onPatch({ action: "reorder", target: "scene", id: scene.id, to }, `ord-sc-${scene.id}`)}
-            onRemove={() => {
-              if (confirm("Удалить сцену, шоты и их задачи? Файлы на диске останутся.")) {
-                void onPatch({ action: "removeScene", sceneId: scene.id }, `rm-${scene.id}`);
-              }
-            }}
-            removeTitle="Удалить сцену"
-            onArm={setArmed}
-          />
-        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          {miss > 0 ? (
+            <span className="rounded-full bg-[#fff8ec] px-2 py-0.5 text-xs font-semibold text-gold">{miss} не хватает</span>
+          ) : null}
+          {canEdit ? (
+            <OrderBar
+              index={index}
+              total={total}
+              disabled={busy}
+              onMove={(to) => onPatch({ action: "reorder", target: "scene", id: scene.id, to }, `ord-sc-${scene.id}`)}
+              onRemove={() => {
+                if (confirm("Удалить сцену, шоты и их задачи? Файлы на диске останутся.")) {
+                  void onPatch({ action: "removeScene", sceneId: scene.id }, `rm-${scene.id}`);
+                }
+              }}
+              removeTitle="Удалить сцену"
+              onArm={setArmed}
+            />
+          ) : null}
+        </div>
       </div>
       {scene.tasks.length ? (
         <div className="px-5 pb-4">
@@ -866,7 +1045,7 @@ function ShotCard({
       <div className="flex flex-col gap-1 pl-2 pr-2">
         <div className="flex items-start justify-between gap-1">
           <div>
-            <div className="font-semibold text-navy">{shot.code}</div>
+            <div className="font-semibold text-navy">{shot.tasks.map((t) => t.title.trim()).find(Boolean) || shot.code}</div>
             <div className="text-xs tabular-nums text-muted">{shot.pct}%</div>
           </div>
         </div>
@@ -888,9 +1067,12 @@ function ShotCard({
       </div>
       {canEdit ? (
         <input
+          id={`shot-loc-${shot.id}`}
+          name={`shot-loc-${shot.id}`}
           className="mt-2 w-full rounded-lg border border-transparent bg-transparent px-2 py-1 text-xs text-muted outline-none hover:border-line focus:border-gold"
           defaultValue={shot.location}
           placeholder="локация кадра"
+          autoComplete="off"
           onBlur={(e) => {
             if (e.target.value.trim() !== shot.location) {
               void onPatch({ action: "patchShot", shotId: shot.id, location: e.target.value }, `loc-${shot.id}`);
@@ -981,7 +1163,7 @@ function AssetRow({
       }}
     >
       <div className="flex min-w-0 items-start justify-between gap-2">
-        <span className="min-w-0 flex-1 break-words font-medium" title={asset.name}>
+        <span className="min-w-0 flex-1 whitespace-normal break-words font-medium" title={asset.name}>
           {asset.name}
         </span>
         <span className="shrink-0 text-xs tabular-nums text-muted">{asset.pct}%</span>
@@ -989,6 +1171,8 @@ function AssetRow({
       {canEdit ? (
         <div className="mt-1 flex flex-wrap items-center gap-2">
           <select
+            id={`asset-kind-${asset.id}`}
+            name={`asset-kind-${asset.id}`}
             className="rounded-lg border border-line bg-white px-2 py-1 text-xs text-navy"
             value={asset.kind}
             disabled={busy}
@@ -1087,20 +1271,20 @@ function AssetSection({
     <div>
       <h2 className="mb-3 font-serif text-2xl text-navy">Ассеты серии</h2>
       {canEdit ? (
-        <Card className="bd-card mb-4 min-w-0">
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="min-w-0 flex-1 basis-[12rem]">
+        <Card className="bd-card mb-4 min-w-0 overflow-x-hidden">
+          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+            <div className="min-w-0 w-full flex-1 basis-[18rem]">
               <Field label="Новый ассет">
                 <Input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="имя персонажа или предмета"
                   title="имя персонажа или предмета"
-                  className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap placeholder:overflow-hidden placeholder:text-ellipsis placeholder:whitespace-nowrap"
+                  className="min-w-0"
                 />
               </Field>
             </div>
-            <div className="w-full min-w-0 sm:w-56 sm:flex-none">
+            <div className="w-full min-w-0 shrink-0 sm:w-52">
               <Field label="Тип">
                 <Select value={kind} onChange={(e) => setKind(e.target.value)} className="min-w-0">
                   <option value="character">персонаж · модель, риг, текстура</option>
@@ -1110,7 +1294,7 @@ function AssetSection({
               </Field>
             </div>
             <Button
-              className="shrink-0"
+              className="w-full shrink-0 sm:w-auto"
               disabled={busy || !name.trim()}
               onClick={async () => {
                 const ok = await onPost(

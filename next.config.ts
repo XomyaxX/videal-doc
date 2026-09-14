@@ -1,7 +1,11 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {
+const nextConfig = {
   serverExternalPackages: ["@prisma/client", "@react-pdf/renderer", "jimp", "exceljs", "nodemailer", "web-push"],
+  experimental: {
+    proxyClientMaxBodySize: "512mb",
+    serverActions: { bodySizeLimit: "512mb" },
+  },
   async headers() {
     return [
       {
@@ -22,12 +26,13 @@ const nextConfig: NextConfig = {
             key: "Content-Security-Policy",
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline'",
+              "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob:",
               "media-src 'self' blob:",
               "font-src 'self'",
               "connect-src 'self' https://*.push.apple.com https://fcm.googleapis.com https://updates.push.services.mozilla.com",
+              "worker-src 'self' blob:",
               "frame-src 'self'",
               "frame-ancestors 'self'",
               "base-uri 'self'",
@@ -40,4 +45,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default nextConfig as NextConfig;

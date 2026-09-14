@@ -15,10 +15,22 @@ const ALLOWED: Record<string, string[]> = {
   "application/msword": [".doc"],
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
   "application/vnd.ms-excel": [".xls"],
+  "model/gltf-binary": [".glb"],
+  "model/gltf+json": [".gltf"],
+  "application/x-blender": [".blend"],
+  "model/fbx": [".fbx"],
+  "model/obj": [".obj"],
+  "model/stl": [".stl"],
+  "model/vnd.collada+xml": [".dae"],
 };
 
+function looksPdf(b: Buffer) {
+  const head = b.subarray(0, 2048).toString("latin1");
+  return head.includes("%PDF-");
+}
+
 const MAGIC: { mime: string; test: (b: Buffer) => boolean }[] = [
-  { mime: "application/pdf", test: (b) => b.slice(0, 5).toString() === "%PDF-" },
+  { mime: "application/pdf", test: looksPdf },
   { mime: "image/jpeg", test: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
   { mime: "image/png", test: (b) => b.slice(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) },
   { mime: "image/webp", test: (b) => b.slice(0, 4).toString() === "RIFF" && b.slice(8, 12).toString() === "WEBP" },
@@ -53,8 +65,18 @@ export function assertInside(root: string, abs: string) {
 
 export function sniffMime(buffer: Buffer, declared: string, filename: string): string | null {
   const ext = path.extname(filename).toLowerCase();
+  if (looksPdf(buffer) && (ext === ".pdf" || ext === "" || declared.includes("pdf"))) {
+    return "application/pdf";
+  }
+  if (ext === ".glb") return "model/gltf-binary";
+  if (ext === ".gltf") return "model/gltf+json";
+  if (ext === ".blend") return "application/x-blender";
+  if (ext === ".fbx") return "model/fbx";
+  if (ext === ".obj") return "model/obj";
+  if (ext === ".stl") return "model/stl";
   const magic = MAGIC.find((m) => m.test(buffer));
-  const mime = magic?.mime || declared;
+  const declaredNorm = declared.split(";")[0].trim().toLowerCase();
+  const mime = magic?.mime || declaredNorm;
   const allowedExt = ALLOWED[mime];
   if (!allowedExt) return null;
   if (ext && !allowedExt.includes(ext)) {
@@ -113,7 +135,7 @@ export async function canReadStoredFile(user: SessionUser, fileId: string): Prom
   if (!rec) return false;
   if (rec.createdById === user.id) return true;
 
-  const [doc, signed, receipt, hr, fund, purchase, libItem, libFile, personDoc, photo, signature, org, jobFile, groupAvatar, revision] = await Promise.all([
+  const [doc, signed, receipt, hr, fund, purchase, purchaseExtra, purchaseReqFile, libItem, libFile, personDoc, photo, signature, org, jobFile, groupAvatar, revision] = await Promise.all([
     prisma.document.findFirst({
       where: { OR: [{ originalFileId: fileId }, { printFileId: fileId }] },
       select: { id: true, authorId: true },
@@ -135,6 +157,14 @@ export async function canReadStoredFile(user: SessionUser, fileId: string): Prom
       select: { request: { select: { authorId: true, managerId: true } } },
     }),
     prisma.purchaseItem.findFirst({
+      where: { fileId },
+      select: { request: { select: { authorId: true } } },
+    }),
+    prisma.purchaseItemFile.findFirst({
+      where: { fileId },
+      select: { item: { select: { request: { select: { authorId: true } } } } },
+    }),
+    prisma.purchaseRequestFile.findFirst({
       where: { fileId },
       select: { request: { select: { authorId: true } } },
     }),
@@ -213,17 +243,56 @@ export async function canReadStoredFile(user: SessionUser, fileId: string): Prom
       return true;
     }
   }
-  if (purchase) {
-    if (purchase.request.authorId === user.id || userCan(user, "requests.aho")) return true;
+  const purchaseAuthor =
+    purchase?.request.authorId ||
+    purchaseExtra?.item.request.authorId ||
+    purchaseReqFile?.request.authorId;
+  if (purchaseAuthor) {
+    if (purchaseAuthor === user.id || userCan(user, "requests.aho")) return true;
   }
   if (jobFile) {
     if (canLeadProd(user) || canManageProd(user)) return true;
     const jobId = jobFile.message.jobId;
     const [member, assigned] = await Promise.all([
       prisma.jobMember.findUnique({ where: { jobId_userId: { jobId, userId: user.id } } }),
-      prisma.task.findFirst({ where: { jobId, assigneeId: user.id, deletedAt: null }, select: { id: true } }),
+      prisma.task.findFirst({
+        where: { jobId, deletedAt: null, OR: [{ assigneeId: user.id }, { helperId: user.id }] },
+        select: { id: true },
+      }),
     ]);
     if (member || assigned) return true;
   }
+  const meetFile = await prisma.meetingFile.findFirst({
+    where: {
+      fileId,
+      meeting: {
+        deletedAt: null,
+        OR: [{ authorId: user.id }, { participants: { some: { userId: user.id } } }],
+      },
+    },
+    select: { id: true },
+  });
+  if (meetFile) return true;
+  const meetPrev = await prisma.meetingFile.findFirst({
+    where: {
+      previewFileId: fileId,
+      meeting: {
+        deletedAt: null,
+        OR: [{ authorId: user.id }, { participants: { some: { userId: user.id } } }],
+      },
+    },
+    select: { id: true },
+  });
+  if (meetPrev) return true;
+  const libPrev = await prisma.libraryFile.findFirst({
+    where: { previewFileId: fileId, item: { deletedAt: null } },
+    select: { id: true },
+  });
+  if (libPrev && (userCan(user, "prod.work") || userCan(user, "prod.lead") || userCan(user, "prod.manage"))) return true;
+  const chatPrev = await prisma.prodChatFile.findFirst({
+    where: { previewFileId: fileId },
+    select: { message: { select: { scopeKey: true } } },
+  });
+  if (chatPrev) return true;
   return false;
 }

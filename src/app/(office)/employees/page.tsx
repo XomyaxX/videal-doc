@@ -5,6 +5,7 @@ import { Button, Card, Empty, PageHeader, Pill } from "@/components/ui";
 import { Avatar } from "@/components/Avatar";
 import { WriteChatButton } from "./WriteChatButton";
 import { fullName } from "@/lib/names";
+import { genderLabel } from "@/lib/gender";
 import { fmtBirth, officeYmd, utcMonthDay } from "@/lib/dates";
 import { USER_SAFE_SELECT } from "@/lib/user-public";
 
@@ -43,6 +44,7 @@ export default async function EmployeesPage() {
                     <div className="text-sm text-muted">
                       {p.position?.name || "без должности"}
                       {p.department ? ` · ${p.department.name}` : ""}
+                      {p.gender ? ` · ${genderLabel(p.gender)}` : ""}
                     </div>
                     {p.id !== user.id ? (
                       <div className="mt-2">

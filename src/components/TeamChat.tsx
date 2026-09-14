@@ -2,12 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Button, ErrorText } from "@/components/ui";
+import { filesFromClipboard } from "@/lib/clipboard-files";
+import { ModelPreview } from "@/components/ModelPreview";
 
 type ChatFile = {
   id: string;
   originalName: string;
-  preview: "image" | "pdf" | "video" | "none";
+  preview: "image" | "pdf" | "video" | "model3d" | "none";
   fileUrl: string;
+  previewUrl?: string;
   thumbUrl: string;
 };
 
@@ -39,6 +42,9 @@ function FilePreview({ file }: { file: ChatFile }) {
   if (file.preview === "pdf") {
     return <iframe title={file.originalName} src={file.fileUrl} className="mt-2 h-56 w-full rounded-lg bg-white" />;
   }
+  if (file.preview === "model3d") {
+    return <ModelPreview src={file.previewUrl || file.fileUrl} compact className="mt-2 overflow-hidden rounded-lg" />;
+  }
   return (
     <a href={file.fileUrl} className="mt-2 inline-block text-sm font-semibold text-navy underline">
       {file.originalName}
@@ -69,6 +75,7 @@ export function TeamChat({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [over, setOver] = useState(false);
+  const dragDepth = useRef(0);
   const bottom = useRef<HTMLDivElement>(null);
 
   async function load() {
@@ -115,7 +122,37 @@ export function TeamChat({
   }
 
   return (
-    <div className={`flex flex-col ${className}`}>
+    <div
+      className={`relative flex flex-col ${className}`}
+      onDragEnter={(e) => {
+        if (!canWrite || ![...e.dataTransfer.types].includes("Files")) return;
+        e.preventDefault();
+        dragDepth.current += 1;
+        setOver(true);
+      }}
+      onDragOver={(e) => {
+        if (!canWrite || ![...e.dataTransfer.types].includes("Files")) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+      }}
+      onDragLeave={() => {
+        dragDepth.current = Math.max(0, dragDepth.current - 1);
+        if (dragDepth.current === 0) setOver(false);
+      }}
+      onDrop={(e) => {
+        if (!canWrite) return;
+        e.preventDefault();
+        dragDepth.current = 0;
+        setOver(false);
+        const pasted = filesFromClipboard(e.dataTransfer);
+        if (pasted.length) addFiles(pasted);
+      }}
+    >
+      {canWrite && over ? (
+        <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-xl border-2 border-dashed border-gold bg-gold/15">
+          <p className="rounded-xl bg-white px-4 py-2 font-semibold text-navy">Отпустите, чтобы прикрепить</p>
+        </div>
+      ) : null}
       <div className="min-h-0 flex-1 space-y-3 overflow-auto pr-1">
         {rows.length === 0 ? <p className="text-sm text-muted">{emptyText}</p> : null}
         {rows.map((m) => (
@@ -138,15 +175,11 @@ export function TeamChat({
         <form
           className="mt-3 space-y-2"
           onSubmit={send}
-          onDragOver={(e) => {
+          onPaste={(e) => {
+            const pasted = filesFromClipboard(e.clipboardData);
+            if (!pasted.length) return;
             e.preventDefault();
-            setOver(true);
-          }}
-          onDragLeave={() => setOver(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setOver(false);
-            addFiles(e.dataTransfer.files);
+            addFiles(pasted);
           }}
         >
           <ErrorText>{error}</ErrorText>
@@ -160,6 +193,13 @@ export function TeamChat({
             }}
             placeholder={placeholder}
             className="min-h-[72px] w-full rounded-xl border border-line bg-white px-3 py-2"
+            onPaste={(e) => {
+              const pasted = filesFromClipboard(e.clipboardData);
+              if (!pasted.length) return;
+              e.preventDefault();
+              e.stopPropagation();
+              addFiles(pasted);
+            }}
           />
           <p className="text-xs text-muted">Enter — отправить, Shift+Enter — новая строка</p>
           <label

@@ -5,18 +5,23 @@ import { Card, PageHeader, Pill, Empty, Button } from "@/components/ui";
 import { STAGE_LABEL, STATUS_LABEL, STATUS_PILL, canLeadProd } from "@/lib/prod";
 import { taskListWhere, taskTitle } from "@/lib/prod-server";
 import { fmtDate } from "@/lib/dates";
+import { pairNames } from "@/lib/names";
 import { QuickTask } from "./QuickTask";
 import { episodeProgress } from "@/lib/prod-progress";
 import { ProgressBar } from "@/components/ProgressBar";
 import { currentEpisodeId } from "@/lib/current-episode";
 import { pipelineKindLabel, taskPipelineKind } from "@/lib/prod-kinds";
 import { jobListWhere, jobProgress } from "@/lib/jobs";
+import { serializeTask } from "@/lib/chat-widgets";
+import { PeerDone } from "./PeerDone";
 
 export default async function MyProdPage() {
   const user = await requirePermission("prod.view");
   const tasks = await prisma.task.findMany({
     where: taskListWhere(user, "mine"),
     include: {
+      assignee: true,
+      helper: true,
       shot: true,
       scene: { include: { episode: { include: { show: { select: { pipelineKind: true } } } } } },
       asset: { include: { episode: { include: { show: { select: { pipelineKind: true } } } } } },
@@ -50,6 +55,28 @@ export default async function MyProdPage() {
       })
     : null;
   const series = episode ? episodeProgress(episode) : null;
+  const peerRows = await prisma.chatTask.findMany({
+    where: { assigneeId: user.id, status: { not: "done" } },
+    include: {
+      assignee: { select: { lastName: true, firstName: true, middleName: true } },
+      author: { select: { lastName: true, firstName: true, middleName: true } },
+      parent: { select: { title: true } },
+      linkedJob: { select: { id: true, title: true } },
+      linkedTask: {
+        select: {
+          id: true,
+          title: true,
+          stage: true,
+          shot: { select: { code: true } },
+          scene: { select: { code: true } },
+          asset: { select: { name: true } },
+        },
+      },
+    },
+    orderBy: [{ dueAt: "asc" }, { createdAt: "desc" }],
+    take: 40,
+  });
+  const peers = peerRows.map(serializeTask);
   const myJobs = await prisma.job.findMany({
     where: { status: { not: "archived" }, ...jobListWhere(user) },
     include: {
@@ -64,7 +91,7 @@ export default async function MyProdPage() {
     <div>
       <PageHeader
         title="Мои задачи"
-        subtitle="То, что назначено на вас. Крупные задачи, пайплайн и доска — вкладки рядом."
+        subtitle="Производство отдельно, поручения коллег — своим блоком."
         actions={
           lead ? (
             <div className="flex gap-2">
@@ -78,6 +105,37 @@ export default async function MyProdPage() {
           ) : null
         }
       />
+      {peers.length > 0 ? (
+        <section className="mb-8">
+          <h2 className="mb-3 font-serif text-xl text-navy">Поручения · {peers.length}</h2>
+          <div className="grid gap-3 md:grid-cols-2">
+            {peers.map((t) => (
+              <Card key={t.id} className="hover:border-gold">
+                <div className="text-xs font-semibold uppercase tracking-wide text-gold">
+                  {t.kindLabel || (t.parentTitle ? `Подзадача · ${t.parentTitle}` : "Поручение")}
+                </div>
+                <div className="mt-1 font-semibold text-navy">{t.title}</div>
+                <p className="mt-1 text-sm text-muted">
+                  от {t.authorName || "коллеги"}
+                  {t.dueAt ? ` · к ${fmtDate(new Date(t.dueAt))}` : ""}
+                </p>
+                {t.linkHref ? (
+                  <Link href={t.linkHref} className="mt-1 inline-block text-xs font-semibold text-gold">
+                    {t.linkLabel}
+                  </Link>
+                ) : t.chatId ? (
+                  <Link href={`/chat/${t.chatId}`} className="mt-1 inline-block text-xs font-semibold text-gold">
+                    открыть в чате
+                  </Link>
+                ) : null}
+                <PeerDone id={t.id} status={t.status} />
+              </Card>
+            ))}
+          </div>
+        </section>
+      ) : (
+        <p className="mb-6 text-sm text-muted">Поручений от коллег пока нет — их ставят из чата кнопкой «+».</p>
+      )}
       {myJobs.length > 0 ? (
         <div className="mb-6 grid gap-3 md:grid-cols-2">
           {myJobs.map((j) => {
@@ -108,7 +166,7 @@ export default async function MyProdPage() {
       ) : null}
       {tasks.length === 0 ? (
         <Empty
-          title="Пока ничего не назначено"
+          title="В производстве пока пусто"
           text={lead ? "Соберите сцены на пайплайне — этапы заведутся пачкой — или создайте одну задачу." : "Когда руководитель назначит шот — он появится здесь и в календаре."}
         />
       ) : (
@@ -133,6 +191,8 @@ export default async function MyProdPage() {
                           <span className="font-semibold">{taskTitle(t)}</span>
                         </div>
                         <p className="mt-2 text-sm text-muted">
+                          {pairNames(t.assignee, t.helper)}
+                          {" · "}
                           {t.startsAt || t.dueAt
                             ? `${t.startsAt ? fmtDate(t.startsAt) : "…"} → ${t.dueAt ? fmtDate(t.dueAt) : "без срока"}`
                             : "срок ещё не проставлен"}

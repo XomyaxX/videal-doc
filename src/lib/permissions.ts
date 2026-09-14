@@ -121,6 +121,19 @@ export const ROLE_PRESETS: Record<string, PermissionCode[]> = {
     "hrdocs.create",
     "archive.view",
   ],
+  sublead: [
+    "docs.view_own",
+    "docs.send",
+    "users.view",
+    "scan.use",
+    "finance.create",
+    "prod.view",
+    "prod.work",
+    "prod.lead",
+    "requests.create",
+    "hrdocs.create",
+    "archive.view",
+  ],
 };
 
 export function parsePermissions(raw: string): string[] {

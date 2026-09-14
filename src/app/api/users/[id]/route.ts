@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { forgetTrustedDevices, getSession } from "@/lib/auth";
 import { userCan } from "@/lib/types";
 import { prisma } from "@/lib/prisma";
 import { hashPassword, randomTempPassword } from "@/lib/password";
 import { audit } from "@/lib/audit";
 import { canAssignRole, canEditUser } from "@/lib/role-guard";
 import { storeSecret } from "@/lib/secret";
+import { inferGender, parseGender } from "@/lib/gender";
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -33,6 +34,16 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   ] as const;
   for (const f of fields) {
     if (body?.[f] !== undefined) data[f] = String(body[f]).trim();
+  }
+  if (body?.gender !== undefined) {
+    const g = parseGender(body.gender);
+    data.gender =
+      g ||
+      inferGender({
+        login: String(data.login ?? target.login),
+        firstName: String(data.firstName ?? target.firstName),
+        middleName: String(data.middleName ?? target.middleName),
+      });
   }
   data.departmentId = body?.departmentId || null;
   data.positionId = body?.positionId || null;
@@ -77,6 +88,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   if (blocked) return NextResponse.json({ error: blocked }, { status: 403 });
   await prisma.user.update({ where: { id }, data: { deletedAt: new Date(), status: "dismissed" } });
   await prisma.session.deleteMany({ where: { userId: id } });
+  await forgetTrustedDevices(id);
   await audit({ userId: session.user.id, action: "user.delete", entity: "user", entityId: id });
   const { syncOfficialChats } = await import("@/lib/chat-official");
   await syncOfficialChats(true);
@@ -101,6 +113,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       data: { passwordHash: hashPassword(temp), mustChangePassword: true },
     });
     await prisma.session.deleteMany({ where: { userId: id } });
+    await forgetTrustedDevices(id);
     await audit({ userId: session.user.id, action: "user.reset_password", entity: "user", entityId: id });
     return NextResponse.json({ tempPassword: temp });
   }
@@ -111,6 +124,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
     await prisma.session.updateMany({ where: { userId: id }, data: { totpOk: false } });
     await prisma.userDevice.updateMany({ where: { userId: id, revokedAt: null }, data: { revokedAt: new Date(), pushToken: "" } });
+    await forgetTrustedDevices(id);
     await audit({ userId: session.user.id, action: "2fa.reset", entity: "user", entityId: id });
     return NextResponse.json({ ok: true });
   }

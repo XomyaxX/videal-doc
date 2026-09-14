@@ -5,14 +5,13 @@ import { Button, ErrorText, Field, Input } from "@/components/ui";
 
 export function DateEditor({
   id,
-  startsAt,
   dueAt,
+  startedLabel,
 }: {
   id: string;
-  startsAt: string;
   dueAt: string;
+  startedLabel?: string;
 }) {
-  const [start, setStart] = useState(startsAt);
   const [due, setDue] = useState(dueAt);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -23,7 +22,7 @@ export function DateEditor({
     const res = await fetch(`/api/prod/tasks/${id}/dates`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ startsAt: start || null, dueAt: due || null }),
+      body: JSON.stringify({ dueAt: due || null }),
     });
     const data = await res.json();
     setBusy(false);
@@ -33,18 +32,16 @@ export function DateEditor({
 
   return (
     <div className="mt-4 space-y-3 rounded-xl border border-line bg-white p-3">
-      <p className="text-sm font-semibold text-navy">Срок задачи</p>
+      <p className="text-sm font-semibold text-navy">Дедлайн</p>
+      {startedLabel ? <p className="text-xs text-muted">{startedLabel}</p> : (
+        <p className="text-xs text-muted">Начало проставится само, когда исполнитель нажмёт «В работу».</p>
+      )}
       <ErrorText>{error}</ErrorText>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Начало">
-          <Input type="date" value={start} onChange={(e) => setStart(e.target.value)} />
-        </Field>
-        <Field label="Окончание">
-          <Input type="date" value={due} onChange={(e) => setDue(e.target.value)} />
-        </Field>
-      </div>
+      <Field label="Сдать до">
+        <Input type="date" value={due} onChange={(e) => setDue(e.target.value)} />
+      </Field>
       <Button disabled={busy} variant="secondary" onClick={() => void save()}>
-        Сохранить даты
+        Сохранить дедлайн
       </Button>
     </div>
   );

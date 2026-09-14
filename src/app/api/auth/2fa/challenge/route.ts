@@ -20,6 +20,14 @@ export async function POST(req: NextRequest) {
   }
   if (session.user.totpOk) return NextResponse.json({ error: "Уже подтверждено" }, { status: 400 });
 
+  const body = await req.json().catch(() => null);
+  if (typeof body?.remember === "boolean") {
+    await prisma.session.updateMany({
+      where: { token: session.token },
+      data: { rememberDevice: body.remember },
+    });
+  }
+
   const row = await prisma.session.findUnique({ where: { token: session.token }, select: { id: true } });
   if (!row) return NextResponse.json({ error: "Нет сессии" }, { status: 401 });
 

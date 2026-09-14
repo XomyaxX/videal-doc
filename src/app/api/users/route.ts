@@ -6,6 +6,7 @@ import { hashPassword, randomTempPassword } from "@/lib/password";
 import { audit } from "@/lib/audit";
 import { canAssignRole } from "@/lib/role-guard";
 import { storeSecret } from "@/lib/secret";
+import { inferGender, parseGender } from "@/lib/gender";
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
@@ -33,6 +34,13 @@ export async function POST(req: NextRequest) {
       lastName,
       firstName,
       middleName: String(body?.middleName || "").trim(),
+      gender:
+        parseGender(body?.gender) ||
+        inferGender({
+          login,
+          firstName,
+          middleName: String(body?.middleName || "").trim(),
+        }),
       phone: String(body?.phone || "").trim(),
       email: String(body?.email || "").trim(),
       smtpPassword: body?.smtpPassword ? storeSecret(String(body.smtpPassword)) : "",

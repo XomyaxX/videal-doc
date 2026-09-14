@@ -79,6 +79,13 @@ export function EmployeeForm({
       <Field label="Отчество">
         <Input name="middleName" defaultValue={initial?.middleName} />
       </Field>
+      <Field label="Пол">
+        <Select name="gender" defaultValue={initial?.gender || ""}>
+          <option value="">—</option>
+          <option value="m">Мужской</option>
+          <option value="f">Женский</option>
+        </Select>
+      </Field>
       <Field label="Телефон">
         <Input name="phone" defaultValue={initial?.phone} />
       </Field>

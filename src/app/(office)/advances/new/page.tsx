@@ -24,7 +24,7 @@ export default async function NewAdvancePage({
       </Link>
       <PageHeader
         title="Новый авансовый отчёт"
-        subtitle="Выберите запросы одного направления. На следующем шаге приложите чеки: QR или с нуля."
+        subtitle="Шаг 1 из 3. Выберите выплаты. Дальше чеки (QR из банка или сумма руками). Потом сдать. Бланк АО-1 соберётся сам."
       />
       <NewAdvanceForm funds={openFunds} preselect={preselect} />
     </div>

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { DEVICE_COOKIE, getSession } from "@/lib/auth";
+import { DEVICE_COOKIE, getSession, trustDevice } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { rateLimit } from "@/lib/login-guard";
@@ -33,10 +33,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, status: "denied" });
   }
 
+  const computer = await prisma.session.findUnique({ where: { id: row.sessionId } });
   await prisma.$transaction([
     prisma.authChallenge.update({ where: { id: row.id }, data: { consumedAt: new Date() } }),
     prisma.session.update({ where: { id: row.sessionId }, data: { totpOk: true } }),
   ]);
+  if (computer?.rememberDevice && computer.deviceId) {
+    await trustDevice(computer.userId, computer.deviceId, computer.userAgent);
+  }
 
   const ua = req.headers.get("user-agent") || "";
   const deviceCookie = req.cookies.get(DEVICE_COOKIE)?.value || "";

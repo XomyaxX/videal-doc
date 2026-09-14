@@ -1,4 +1,4 @@
-import { STAGE_LABEL, STAGE_WEIGHT } from "./prod";
+import { STAGE_LABEL, STAGE_WEIGHT, STATUS_LABEL } from "./prod";
 
 export type ProgressTask = {
   id: string;
@@ -80,6 +80,12 @@ export type StageProgress = {
   count: number;
 };
 
+export type ProgressSlice = {
+  status: string;
+  label: string;
+  pct: number;
+};
+
 export type EpisodeProgress = {
   pct: number;
   weight: number;
@@ -90,6 +96,10 @@ export type EpisodeProgress = {
   scenesWeight: number;
   assetsWeight: number;
   preprodWeight: number;
+  scenesShare: number;
+  assetsShare: number;
+  preprodShare: number;
+  slices: ProgressSlice[];
   stages: StageProgress[];
   scenes: SceneProgress[];
   characters: AssetProgress[];
@@ -208,6 +218,31 @@ export function episodeProgress(episode: {
     .filter((s) => s.weight > 0)
     .sort((a, b) => b.weight - a.weight);
 
+  const preprodShare = weight > 0 ? Math.round((100 * preprodTot.weight) / weight) : 0;
+  const scenesShare = weight > 0 ? Math.round((100 * scenesWeight) / weight) : 0;
+  const assetsShare =
+    weight > 0 ? Math.max(0, 100 - preprodShare - scenesShare) : 0;
+
+  const allTasks: ProgressTask[] = [
+    ...preprodTasks,
+    ...episode.scenes.flatMap((sc) => [...sc.tasks, ...sc.shots.flatMap((sh) => sh.tasks)]),
+    ...episode.assets.flatMap((a) => a.tasks),
+  ];
+  const byStatusDone = new Map<string, number>();
+  for (const t of allTasks) {
+    const s = taskShare(t);
+    if (s.done <= 0) continue;
+    byStatusDone.set(t.status, (byStatusDone.get(t.status) || 0) + s.done);
+  }
+  const slices: ProgressSlice[] = [];
+  for (const status of ["approved", "done", "revise", "wip"] as const) {
+    const part = byStatusDone.get(status) || 0;
+    if (part <= 0) continue;
+    const p = pct(part, weight);
+    if (p <= 0) continue;
+    slices.push({ status, label: STATUS_LABEL[status] || status, pct: p });
+  }
+
   return {
     pct: pct(done, weight),
     weight,
@@ -218,6 +253,10 @@ export function episodeProgress(episode: {
     scenesWeight,
     assetsWeight,
     preprodWeight: preprodTot.weight,
+    scenesShare,
+    assetsShare,
+    preprodShare,
+    slices,
     stages,
     scenes,
     characters,

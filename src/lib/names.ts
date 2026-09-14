@@ -30,3 +30,12 @@ export function shortNamePlain(user: {
 export function initials(user: { lastName: string; firstName: string }): string {
   return `${user.lastName[0] ?? ""}${user.firstName[0] ?? ""}`.toUpperCase();
 }
+
+type NameBits = { lastName: string; firstName: string; middleName?: string | null };
+
+export function pairNames(a?: NameBits | null, b?: NameBits | null, fmt: (u: NameBits) => string = shortName): string {
+  if (a && b) return `${fmt(a)} + ${fmt(b)}`;
+  if (a) return fmt(a);
+  if (b) return fmt(b);
+  return "не назначен";
+}

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requirePermission, can } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { Button, Card, PageHeader, Pill } from "@/components/ui";
+import { Card, PageHeader, Pill } from "@/components/ui";
 import { REQUEST_STATUS, categoryLabel } from "@/lib/requests";
 import { fmtDate, officeYmd } from "@/lib/dates";
 import { fullName } from "@/lib/names";
@@ -21,17 +21,22 @@ export default async function RequestPage({ params }: { params: Promise<{ id: st
     include: {
       author: { select: USER_SAFE_SELECT },
       ahoUser: { select: USER_SAFE_SELECT },
-      items: { orderBy: { sortOrder: "asc" } },
+      items: { orderBy: { sortOrder: "asc" }, include: { files: { orderBy: { sortOrder: "asc" } } } },
+      files: { orderBy: { sortOrder: "asc" } },
       fundRequest: true,
     },
   });
   if (!row) notFound();
   if (!aho && row.authorId !== user.id) notFound();
   const st = REQUEST_STATUS[row.status] || REQUEST_STATUS.draft;
-  const files = row.items.filter((i) => i.fileId);
-  const stored = files.length
-    ? await prisma.storedFile.findMany({ where: { id: { in: files.map((f) => f.fileId) } } })
-    : [];
+  const fileIds = [
+    ...row.files.map((f) => f.fileId),
+    ...row.items.flatMap((i) => [
+      ...i.files.map((f) => f.fileId),
+      ...(i.fileId ? [i.fileId] : []),
+    ]),
+  ].filter((id, i, all) => id && all.indexOf(id) === i);
+  const stored = fileIds.length ? await prisma.storedFile.findMany({ where: { id: { in: fileIds } } }) : [];
   const byId = Object.fromEntries(stored.map((f) => [f.id, f]));
   const people = await prisma.user.findMany({
     where: { deletedAt: null, status: "active" },
@@ -63,32 +68,40 @@ export default async function RequestPage({ params }: { params: Promise<{ id: st
               <p className="mt-2 whitespace-pre-wrap">{row.reason}</p>
             </Card>
           ) : null}
+          {row.files.length > 0 ? (
+            <Card>
+              <h2 className="font-serif text-xl text-navy">Фото и документы</h2>
+              <FileList ids={row.files.map((f) => f.fileId)} byId={byId} />
+            </Card>
+          ) : null}
           <Card>
             <h2 className="font-serif text-xl text-navy">Позиции</h2>
             <ul className="mt-3 divide-y divide-line">
-              {row.items.map((it) => (
-                <li key={it.id} className="py-3">
-                  <div className="font-semibold">
-                    {it.name}{" "}
-                    <span className="text-muted">
-                      × {it.qty} {it.unit}
-                    </span>
-                  </div>
-                  {it.url ? (
-                    <a className="break-all text-sm text-gold underline" href={it.url} target="_blank" rel="noreferrer">
-                      {it.url}
-                    </a>
-                  ) : (
-                    <div className="text-sm text-muted">без ссылки</div>
-                  )}
-                  {it.note ? <div className="text-sm text-muted">{it.note}</div> : null}
-                  {it.fileId ? (
-                    <a className="text-sm text-gold underline" href={`/api/files/${it.fileId}`}>
-                      {byId[it.fileId]?.originalName || "скрин"}
-                    </a>
-                  ) : null}
-                </li>
-              ))}
+              {row.items.map((it) => {
+                const ids = [
+                  ...it.files.map((f) => f.fileId),
+                  ...(it.fileId && !it.files.some((f) => f.fileId === it.fileId) ? [it.fileId] : []),
+                ];
+                return (
+                  <li key={it.id} className="py-3">
+                    <div className="font-semibold">
+                      {it.name}{" "}
+                      <span className="text-muted">
+                        × {it.qty} {it.unit}
+                      </span>
+                    </div>
+                    {it.url ? (
+                      <a className="break-all text-sm text-gold underline" href={it.url} target="_blank" rel="noreferrer">
+                        {it.url}
+                      </a>
+                    ) : (
+                      <div className="text-sm text-muted">без ссылки</div>
+                    )}
+                    {it.note ? <div className="text-sm text-muted">{it.note}</div> : null}
+                    {ids.length ? <FileList ids={ids} byId={byId} /> : null}
+                  </li>
+                );
+              })}
             </ul>
           </Card>
         </div>
@@ -127,11 +140,52 @@ export default async function RequestPage({ params }: { params: Promise<{ id: st
             </Card>
           ) : (
             <Card>
-              <EmployeeActions id={row.id} status={row.status} />
+              <EmployeeActions
+                id={row.id}
+                status={row.status}
+                canDelete={row.authorId === user.id && row.status === "draft"}
+              />
             </Card>
           )}
+          {aho && row.authorId === user.id && row.status === "draft" ? (
+            <Card>
+              <EmployeeActions id={row.id} status={row.status} canDelete onlyDelete />
+            </Card>
+          ) : null}
         </div>
       </div>
     </div>
+  );
+}
+
+function FileList({
+  ids,
+  byId,
+}: {
+  ids: string[];
+  byId: Record<string, { originalName: string; mimeType: string }>;
+}) {
+  return (
+    <ul className="mt-2 space-y-2">
+      {ids.map((id) => {
+        const f = byId[id];
+        const name = f?.originalName || "файл";
+        const image = (f?.mimeType || "").startsWith("image/");
+        return (
+          <li key={id}>
+            {image ? (
+              <a href={`/api/files/${id}`} target="_blank" rel="noreferrer" className="block">
+                <img src={`/api/files/${id}`} alt={name} className="max-h-48 rounded-xl border border-line object-contain" />
+                <span className="mt-1 block text-xs text-muted">{name}</span>
+              </a>
+            ) : (
+              <a className="text-sm text-gold underline" href={`/api/files/${id}`}>
+                {name}
+              </a>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }

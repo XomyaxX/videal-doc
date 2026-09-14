@@ -7,19 +7,34 @@ import { notify } from "@/lib/notify";
 import { REQUEST_CATEGORIES } from "@/lib/requests";
 import { USER_SAFE_SELECT } from "@/lib/user-public";
 
+function fileIdsFrom(raw: unknown, extra?: string): string[] {
+  const ids: string[] = [];
+  if (Array.isArray(raw)) {
+    for (const x of raw) {
+      const id = String(x || "").trim();
+      if (id && !ids.includes(id)) ids.push(id);
+    }
+  }
+  const one = String(extra || "").trim();
+  if (one && !ids.includes(one)) ids.unshift(one);
+  return ids.slice(0, 20);
+}
+
 function itemsFromBody(raw: unknown) {
   if (!Array.isArray(raw)) return [];
   return raw
     .map((row, i) => {
       const name = String(row?.name || "").trim();
       const qty = Math.max(1, Number(row?.qty) || 1);
+      const fileIds = fileIdsFrom(row?.fileIds, row?.fileId);
       return {
         name,
         qty,
         unit: String(row?.unit || "шт").slice(0, 20),
         url: String(row?.url || "").trim().slice(0, 500),
         note: String(row?.note || "").trim().slice(0, 500),
-        fileId: String(row?.fileId || ""),
+        fileId: fileIds[0] || "",
+        fileIds,
         sortOrder: i,
       };
     })
@@ -62,6 +77,7 @@ export async function POST(req: NextRequest) {
   }
   const items = itemsFromBody(body?.items);
   if (items.length === 0) return NextResponse.json({ error: "Добавьте хотя бы одну позицию" }, { status: 400 });
+  const requestFileIds = fileIdsFrom(body?.fileIds);
   const submit = Boolean(body?.submit);
   const number = await nextNumber("pr", "ЗП");
   const created = await prisma.purchaseRequest.create({
@@ -72,7 +88,23 @@ export async function POST(req: NextRequest) {
       title,
       reason: String(body?.reason || "").trim(),
       status: "draft",
-      items: { create: items },
+      files: requestFileIds.length
+        ? { create: requestFileIds.map((fileId, i) => ({ fileId, sortOrder: i })) }
+        : undefined,
+      items: {
+        create: items.map((it) => ({
+          name: it.name,
+          qty: it.qty,
+          unit: it.unit,
+          url: it.url,
+          note: it.note,
+          fileId: it.fileId,
+          sortOrder: it.sortOrder,
+          files: it.fileIds.length
+            ? { create: it.fileIds.map((fileId, i) => ({ fileId, sortOrder: i })) }
+            : undefined,
+        })),
+      },
     },
     include: { items: true },
   });

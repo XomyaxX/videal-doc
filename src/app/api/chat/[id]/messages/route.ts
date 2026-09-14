@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { bumpUnread, notifyChatMentions, openPayload, requireMember, sealPayload, touchChatSeen } from "@/lib/chat-server";
+import { loadCardsForMessages } from "@/lib/chat-widgets";
 import { fullName } from "@/lib/names";
-import type { ChatPayload } from "@/lib/chat-types";
+import type { ChatAskDto, ChatPayload, ChatPollDto, ChatTaskDto } from "@/lib/chat-types";
 import { rateLimit } from "@/lib/login-guard";
 
 const PAGE = 50;
@@ -19,7 +20,7 @@ function serialize(m: {
   author: { lastName: string; firstName: string; middleName: string; photoFileId: string };
   blobs: { id: string; size: number; mime: string; originalName: string }[];
   reactions: { userId: string; emoji: string }[];
-}, payload: ChatPayload | null) {
+}, payload: ChatPayload | null, extra?: { poll?: ChatPollDto; ask?: ChatAskDto; task?: ChatTaskDto }) {
   return {
     id: m.id,
     authorId: m.authorId,
@@ -35,6 +36,9 @@ function serialize(m: {
     payload: m.deletedAt ? null : payload,
     blobs: m.deletedAt ? [] : m.blobs,
     reactions: m.reactions,
+    poll: extra?.poll,
+    ask: extra?.ask,
+    task: extra?.task,
   };
 }
 
@@ -47,30 +51,61 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   void touchChatSeen(session.user.id);
   const before = req.nextUrl.searchParams.get("before") || "";
   const after = req.nextUrl.searchParams.get("after") || "";
-  const where: { chatId: string; createdAt?: { lt?: Date; gt?: Date } } = { chatId: id };
-  if (before) {
-    const row = await prisma.chatMessage.findUnique({ where: { id: before }, select: { createdAt: true } });
-    if (row) where.createdAt = { lt: row.createdAt };
+  const around = req.nextUrl.searchParams.get("around") || "";
+  const include = {
+    author: { select: { id: true, lastName: true, firstName: true, middleName: true, photoFileId: true } },
+    blobs: { select: { id: true, size: true, mime: true, originalName: true } },
+    reactions: { select: { userId: true, emoji: true } },
+  };
+  let ordered;
+  if (around) {
+    const row = await prisma.chatMessage.findUnique({ where: { id: around }, select: { id: true, chatId: true, createdAt: true } });
+    if (!row || row.chatId !== id) return NextResponse.json({ messages: [] });
+    const older = await prisma.chatMessage.findMany({
+      where: { chatId: id, createdAt: { lte: row.createdAt } },
+      orderBy: { createdAt: "desc" },
+      take: 25,
+      include,
+    });
+    const newer = await prisma.chatMessage.findMany({
+      where: { chatId: id, createdAt: { gt: row.createdAt } },
+      orderBy: { createdAt: "asc" },
+      take: 25,
+      include,
+    });
+    ordered = [...[...older].reverse(), ...newer];
+  } else {
+    const where: { chatId: string; createdAt?: { lt?: Date; gt?: Date } } = { chatId: id };
+    if (before) {
+      const row = await prisma.chatMessage.findUnique({ where: { id: before }, select: { createdAt: true } });
+      if (row) where.createdAt = { lt: row.createdAt };
+    }
+    if (after) {
+      const row = await prisma.chatMessage.findUnique({ where: { id: after }, select: { createdAt: true } });
+      if (row) where.createdAt = { gt: row.createdAt };
+    }
+    const rows = await prisma.chatMessage.findMany({
+      where,
+      orderBy: { createdAt: after ? "asc" : "desc" },
+      take: PAGE,
+      include,
+    });
+    ordered = after ? rows : [...rows].reverse();
   }
-  if (after) {
-    const row = await prisma.chatMessage.findUnique({ where: { id: after }, select: { createdAt: true } });
-    if (row) where.createdAt = { gt: row.createdAt };
-  }
-  const rows = await prisma.chatMessage.findMany({
-    where,
-    orderBy: { createdAt: after ? "asc" : "desc" },
-    take: PAGE,
-    include: {
-      author: { select: { id: true, lastName: true, firstName: true, middleName: true, photoFileId: true } },
-      blobs: { select: { id: true, size: true, mime: true, originalName: true } },
-      reactions: { select: { userId: true, emoji: true } },
-    },
-  });
-  const ordered = after ? rows : [...rows].reverse();
+  const cards = await loadCardsForMessages(
+    ordered.filter((m) => !m.deletedAt).map((m) => m.id),
+    session.user.id,
+  );
   const messages = [];
   for (const m of ordered) {
     const payload = m.deletedAt ? null : await openPayload(m.iv, m.ciphertext);
-    messages.push(serialize(m, payload));
+    messages.push(
+      serialize(m, payload, {
+        poll: cards.polls.get(m.id),
+        ask: cards.asks.get(m.id),
+        task: cards.tasks.get(m.id),
+      }),
+    );
   }
   return NextResponse.json({ messages });
 }
@@ -96,7 +131,16 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   if (text) payload.text = text;
   if (replyToId) payload.replyTo = replyToId;
   if (Array.isArray(body?.files)) payload.files = body.files;
-  if (body?.voice) payload.voice = body.voice;
+  if (body?.voice && typeof body.voice === "object") {
+    const v = body.voice as { blobId?: string; mime?: string; durationMs?: number; text?: string };
+    payload.voice = {
+      blobId: String(v.blobId || ""),
+      mime: String(v.mime || "audio/webm"),
+      durationMs: Math.max(0, Number(v.durationMs) || 0),
+    };
+    const transcript = String(v.text || "").trim().slice(0, 32000);
+    if (transcript) payload.voice.text = transcript;
+  }
   if (body?.system) payload.system = body.system;
   if (type === "text" && !text.trim()) return NextResponse.json({ error: "Пустое сообщение" }, { status: 400 });
   const sealed = await sealPayload(payload);

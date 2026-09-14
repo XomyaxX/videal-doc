@@ -20,6 +20,21 @@
   --bad-bg: #fde8e6;
   --line: #ddd4c6;
   --shadow: 0 10px 30px rgba(22, 50, 79, 0.08);
+  --st-todo: #e94560;
+  --st-todo-bg: #fde8ec;
+  --st-wip: #c9a36a;
+  --st-wip-bg: #f8f1e3;
+  --st-done: #184365;
+  --st-done-bg: #e6eef4;
+  --st-revise: #c45c26;
+  --st-revise-bg: #fdeee4;
+  --st-approved: #327c52;
+  --st-approved-bg: #e3f2e9;
+  --st-blocked: #6b7c9a;
+  --st-blocked-bg: #eef1f5;
+  --st-na: #b8aea0;
+  --st-na-bg: #ece7de;
+  --st-empty: #ddd6c8;
 }
 
 @theme inline {
@@ -89,6 +104,13 @@
 .pill-warn { background: var(--warn-bg); color: var(--warn); }
 .pill-bad { background: var(--bad-bg); color: var(--bad); }
 .pill-draft { background: #ece7de; color: #5c564e; }
+.pill-st-todo { background: var(--st-todo-bg); color: var(--st-todo); }
+.pill-st-wip { background: var(--st-wip-bg); color: var(--st-wip); }
+.pill-st-done { background: var(--st-done-bg); color: var(--st-done); }
+.pill-st-revise { background: var(--st-revise-bg); color: var(--st-revise); }
+.pill-st-approved { background: var(--st-approved-bg); color: var(--st-approved); }
+.pill-st-blocked { background: var(--st-blocked-bg); color: var(--st-blocked); }
+.pill-st-na { background: var(--st-na-bg); color: var(--st-na); }
 
 .dropzone {
   border: 2px dashed var(--line);
@@ -103,11 +125,10 @@
 
 /* Разбивка серии */
 .bd-ring {
-  --p: 0;
   width: 76px;
   height: 76px;
   border-radius: 50%;
-  background: conic-gradient(var(--gold) calc(var(--p) * 1%), var(--paper-2) 0);
+  background: conic-gradient(var(--st-empty) 0 100%);
   display: grid;
   place-items: center;
   box-shadow: inset 0 0 0 1px rgba(165, 124, 59, 0.2);
@@ -252,6 +273,14 @@ li.bd-drop-over {
 .bd-card {
   animation: bd-rise 0.45s ease both;
   transition: border-color 0.18s ease, transform 0.18s ease;
+}
+
+@media (max-width: 639px) {
+  .bd-scene-title {
+    white-space: normal;
+    word-break: normal;
+    overflow-wrap: break-word;
+  }
 }
 .bd-card:hover { border-color: var(--gold-2); }
 

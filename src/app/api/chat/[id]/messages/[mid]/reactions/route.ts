@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { requireMember } from "@/lib/chat-server";
+import { ALL_CHAT_EMOJI, isLeadEmoji } from "@/lib/chat-emoji";
+import { isFullProdLead } from "@/lib/prod";
 
-const ALLOWED = new Set(["👍", "❤️", "😂", "😮", "😢", "🔥", "👏", "✅"]);
+const ALLOWED = new Set<string>(ALL_CHAT_EMOJI);
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string; mid: string }> }) {
   const session = await getSession();
@@ -22,6 +24,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   if (existing) {
     await prisma.chatReaction.delete({ where: { id: existing.id } });
     return NextResponse.json({ ok: true, on: false });
+  }
+  if (isLeadEmoji(emoji) && !isFullProdLead(session.user)) {
+    return NextResponse.json({ error: "Награду может поставить только руководитель" }, { status: 403 });
   }
   await prisma.chatReaction.create({ data: { messageId: mid, userId: session.user.id, emoji } });
   return NextResponse.json({ ok: true, on: true });

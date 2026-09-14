@@ -1,7 +1,7 @@
 import { prisma } from "../prisma";
 import { readStoredFile } from "../files";
 import { fullName, shortName } from "../names";
-import { fmtDate, officeDateParts } from "../dates";
+import { aoDateFromReceipts, fmtDate, officeDateParts } from "../dates";
 import { orgCodesLine, orgNameFull } from "../org";
 import { sumInWords, rubKopText, splitRubKop } from "./money-words";
 import { filePreviewPngs, pngDataUrl } from "./raster";
@@ -23,13 +23,14 @@ export async function loadAo1Bundle(reportId: string): Promise<Ao1Bundle> {
     where: { id: reportId },
     include: {
       receipts: { include: { files: { orderBy: { sortOrder: "asc" } } } },
-      user: { include: { position: true, department: true } },
+      user: { include: { position: true, department: true, role: { select: { code: true } } } },
+      fundRequests: { select: { purchaseRequestId: true } },
     },
   });
   if (!report) throw new Error("Отчёт не найден");
   const org = await prisma.organization.findFirst();
   const spent = report.receipts.reduce((s, r) => s + r.amount, 0);
-  const when = report.reportDate || new Date();
+  const when = aoDateFromReceipts(report.receipts) || report.reportDate || new Date();
   const parts = officeDateParts(when);
 
   const images: Ao1Data["images"] = [];
@@ -62,15 +63,21 @@ export async function loadAo1Bundle(reportId: string): Promise<Ao1Bundle> {
     }
   }
 
+  const dept = (report.user.department?.name || "").trim();
+  const aho =
+    report.user.role?.code === "aho" ||
+    dept.toLowerCase() === "ахо" ||
+    report.fundRequests.some((f) => Boolean(f.purchaseRequestId));
+
   const data: Ao1Data = {
-    orgName: orgNameFull(org),
+    orgName: aho ? "ИП Ермилов" : orgNameFull(org),
     orgCodes: orgCodesLine(org),
     orgOkpo: org?.okpo || "",
     directorTitle: org?.directorTitle || "Генеральный директор",
     directorName: org?.directorName || "",
     accountantName: org?.accountantName || "",
     debitAccount: org?.debitAccount || "",
-    number: report.number,
+    number: "",
     date: parts.date,
     day: parts.day,
     month: parts.month,
@@ -78,7 +85,7 @@ export async function loadAo1Bundle(reportId: string): Promise<Ao1Bundle> {
     employee: fullName(report.user),
     employeeShort: shortName(report.user),
     position: report.user.position?.name || "",
-    department: report.user.department?.name || "Офис",
+    department: "Студия",
     personnelNumber: report.user.personnelNumber,
     purpose: report.purpose || "Хоз расходы",
     issued: report.issuedAmount,
@@ -106,4 +113,11 @@ export async function loadAo1Bundle(reportId: string): Promise<Ao1Bundle> {
     docs: String(data.receipts.length),
     sheets: String(2 + data.images.filter((i) => i.dataUrl).length),
   };
+}
+
+export async function syncAdvanceReportDate(reportId: string) {
+  const receipts = await prisma.receipt.findMany({ where: { reportId }, select: { occurredAt: true } });
+  const reportDate = aoDateFromReceipts(receipts);
+  if (!reportDate) return;
+  await prisma.advanceReport.update({ where: { id: reportId }, data: { reportDate } });
 }

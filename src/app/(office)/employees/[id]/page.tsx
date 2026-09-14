@@ -6,6 +6,8 @@ import { Avatar } from "@/components/Avatar";
 import { EmployeeForm } from "../EmployeeForm";
 import { fullName } from "@/lib/names";
 import { ResetPassword } from "./ResetPassword";
+import { EmployeeStations } from "./EmployeeStations";
+import { stationOnline } from "@/lib/office-lan";
 import { WriteChatButton } from "../WriteChatButton";
 import { canViewArchive } from "@/lib/archive-access";
 import { USER_SAFE_SELECT } from "@/lib/user-public";
@@ -48,6 +50,10 @@ export default async function EmployeePage({ params }: { params: Promise<{ id: s
     : [[], [], [], [], []];
 
   const archiveOk = canViewArchive(user, person);
+  const stations = await prisma.officeStation.findMany({
+    where: { userId: id },
+    orderBy: { lastSeenAt: "desc" },
+  });
 
   return (
     <div>
@@ -102,21 +108,47 @@ export default async function EmployeePage({ params }: { params: Promise<{ id: s
               hiredAt: person.hiredAt ? person.hiredAt.toISOString().slice(0, 10) : "",
               birthDate: person.birthDate ? person.birthDate.toISOString().slice(0, 10) : "",
               status: person.status,
+              gender: person.gender || "",
             }}
           />
           <div className="mt-6">
             <ResetPassword id={person.id} />
           </div>
+          <EmployeeStations
+            canEdit
+            rows={stations.map((s) => ({
+              id: s.id,
+              mac: s.mac,
+              ipv4: s.ipv4,
+              label: s.label,
+              online: stationOnline(s.lastSeenAt),
+              lastSeenAt: s.lastSeenAt?.toISOString() || null,
+            }))}
+          />
         </>
       ) : (
         <Card>
           <dl className="grid gap-3 sm:grid-cols-2">
             <Item k="Должность" v={person.position?.name} />
             <Item k="Отдел" v={person.department?.name} />
+            <Item k="Пол" v={person.gender === "m" ? "Мужской" : person.gender === "f" ? "Женский" : "не указан"} />
             <Item k="Скилы" v={person.skills.map((x) => x.skill.name).join(", ") || "не отмечены"} />
           </dl>
         </Card>
       )}
+      {!manage ? (
+        <EmployeeStations
+          canEdit={false}
+          rows={stations.map((s) => ({
+            id: s.id,
+            mac: s.mac,
+            ipv4: s.ipv4,
+            label: s.label,
+            online: stationOnline(s.lastSeenAt),
+            lastSeenAt: s.lastSeenAt?.toISOString() || null,
+          }))}
+        />
+      ) : null}
     </div>
   );
 }

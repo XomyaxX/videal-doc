@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
       endYmd: officeYmd(t.dueAt!),
       stage: t.stage,
       status: t.status,
-      mine: t.assigneeId === session.user.id,
+      mine: t.assigneeId === session.user.id || t.helperId === session.user.id,
     })),
   });
 }

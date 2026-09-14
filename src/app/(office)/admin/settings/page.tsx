@@ -6,6 +6,7 @@ import { SettingsForm } from "./SettingsForm";
 import { PublicUrlBlock } from "./PublicUrlBlock";
 import { TestDelivery } from "./TestDelivery";
 import { OfficeNetCard } from "./OfficeNetCard";
+import { OfficeLanCard } from "./OfficeLanCard";
 import { ChatKeyCard } from "./ChatKeyCard";
 import { fullName } from "@/lib/names";
 
@@ -25,6 +26,7 @@ export default async function SettingsPage() {
       <PageHeader title="Настройки системы" />
       <PublicUrlBlock initialUrl={publicUrl} />
       <OfficeNetCard />
+      <OfficeLanCard people={people.map((p) => ({ id: p.id, name: fullName(p) }))} />
       <ChatKeyCard />
       <TestDelivery
         people={people.map((p) => ({

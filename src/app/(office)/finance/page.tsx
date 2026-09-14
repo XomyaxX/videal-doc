@@ -69,7 +69,7 @@ export default async function FinancePage() {
             <div className="flex items-start justify-between">
               <div>
                 <div className="font-serif text-xl text-navy">Авансовые отчёты</div>
-                <p className="text-muted">Отчёт по запросам: QR кассового чека или расход с нуля. PDF и Excel АО-1.</p>
+                <p className="text-muted">Отчёт по запросам: чек по QR из банка или расход руками. PDF и Excel (АО-1).</p>
               </div>
               <Pill tone="ok">открыть</Pill>
             </div>
@@ -88,33 +88,34 @@ export default async function FinancePage() {
             </div>
           </Card>
         </Link>
-        {templates
-          .filter((t) => t.code !== "funds" && t.code !== "ao1")
-          .map((t) =>
-            t.enabled ? (
-              <Link key={t.id} href="/advances">
-                <Card className="hover:border-gold">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="font-serif text-xl text-navy">{t.name}</div>
-                      <p className="text-muted">{t.description}</p>
-                    </div>
-                    <Pill tone="ok">открыть</Pill>
-                  </div>
-                </Card>
-              </Link>
-            ) : (
-              <Card key={t.id} className="opacity-80">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="font-serif text-xl text-navy">{t.name}</div>
-                    <p className="text-muted">{t.description}</p>
-                  </div>
-                  <Pill tone="draft">скоро</Pill>
-                </div>
-              </Card>
-            ),
-          )}
+        {user.roleCode !== "employee"
+          ? (() => {
+              const soon = templates.filter((t) => t.code !== "funds" && t.code !== "ao1" && !t.enabled);
+              const live = templates.filter((t) => t.code !== "funds" && t.code !== "ao1" && t.enabled);
+              return (
+                <>
+                  {live.map((t) => (
+                    <Link key={t.id} href="/advances">
+                      <Card className="hover:border-gold">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <div className="font-serif text-xl text-navy">{t.name}</div>
+                            <p className="text-muted">{t.description}</p>
+                          </div>
+                          <Pill tone="ok">открыть</Pill>
+                        </div>
+                      </Card>
+                    </Link>
+                  ))}
+                  {soon.length > 0 ? (
+                    <Card className="md:col-span-2">
+                      <p className="text-sm text-muted">Скоро у бухгалтерии: {soon.map((t) => t.name).join(", ")}</p>
+                    </Card>
+                  ) : null}
+                </>
+              );
+            })()
+          : null}
       </div>
     </div>
   );

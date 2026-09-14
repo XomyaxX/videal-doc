@@ -71,6 +71,7 @@ model User {
   lastName           String
   firstName          String
   middleName         String    @default("")
+  gender             String    @default("")
   phone              String    @default("")
   email              String    @default("")
   smtpPassword       String    @default("")
@@ -118,6 +119,8 @@ model User {
   hrInbox           HrRequest[]         @relation("HrManager")
   personDocuments   PersonDocument[]
   assignedTasks     Task[]                 @relation("TaskAssignee")
+  helperTasks       Task[]                 @relation("TaskHelper")
+  assignedByTasks   Task[]                 @relation("TaskAssignedBy")
   taskEvents        TaskEvent[]
   uploadedTaskFiles TaskFile[]             @relation("TaskFileUploader")
   scoreEvents       ProductionScoreEvent[]
@@ -132,11 +135,13 @@ model User {
   prodChatMessages  ProdChatMessage[]
   prodChatFiles     ProdChatFile[]     @relation("ProdChatFileUploader")
   devices           UserDevice[]
+  trustedDevices    TrustedDevice[]
   authChallenges    AuthChallenge[]
   webPush           WebPushSub[]
   attendanceDays    AttendanceDay[]
   attendanceEvents  AttendanceEvent[]
   attendanceFlags   AttendanceFlag[]
+  officeStations    OfficeStation[]
   inventory         InventoryItem[]
   chatIdentity      ChatIdentity?
   chatMembers       ChatMember[]
@@ -144,7 +149,17 @@ model User {
   chatKeyWraps      ChatKeyWrap[]
   chatReactions     ChatReaction[]
   chatLinkOffers    ChatLinkOffer[]
+  chatPolls         ChatPoll[]
+  chatPollVotes     ChatPollVote[]
+  chatAsks          ChatAsk[]
+  chatAskTargets    ChatAskTarget[]
+  chatAskReplies    ChatAskReply[]
+  chatTasksAuthored ChatTask[]          @relation("ChatTaskAuthor")
+  chatTasksAssigned ChatTask[]          @relation("ChatTaskAssignee")
   correspondences   Correspondence[]
+  meetingsAuthored  Meeting[]              @relation("MeetingAuthor")
+  meetingParts      MeetingParticipant[]
+  meetingPeers      MeetingPeer[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -158,13 +173,29 @@ model Session {
   deviceId   String   @default("")
   userAgent  String   @default("")
   ip         String   @default("")
+  lastLanIp  String   @default("")
   createdAt  DateTime @default(now())
   lastSeenAt DateTime @default(now())
   expiresAt  DateTime
-  totpOk     Boolean  @default(true)
-  challenges AuthChallenge[]
+  totpOk          Boolean  @default(true)
+  rememberDevice  Boolean  @default(false)
+  challenges      AuthChallenge[]
 
   @@index([deviceId, userId])
+}
+
+model TrustedDevice {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId   String
+  userAgent  String   @default("")
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+  expiresAt  DateTime
+
+  @@unique([userId, deviceId])
+  @@index([expiresAt])
 }
 
 model UserDevice {
@@ -211,6 +242,28 @@ model WebPushSub {
   lastError String   @default("")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model OfficeIdentify {
+  id       String   @id @default(cuid())
+  deviceId String   @unique
+  code     String
+  userId   String   @default("")
+  ip       String   @default("")
+  seenAt   DateTime @default(now())
+}
+
+model OfficeStation {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mac        String    @unique
+  ipv4       String    @default("")
+  label      String    @default("")
+  lastSeenAt DateTime?
+  createdAt  DateTime  @default(now())
 
   @@index([userId])
 }
@@ -476,6 +529,79 @@ model CalendarParticipant {
   @@unique([eventId, userId])
 }
 
+model Meeting {
+  id              String   @id @default(cuid())
+  title           String
+  body            String   @default("")
+  place           String   @default("")
+  startsAt        DateTime
+  endsAt          DateTime
+  status          String   @default("scheduled")
+  authorId        String
+  author          User     @relation("MeetingAuthor", fields: [authorId], references: [id])
+  calendarEventId String   @default("")
+  deletedAt       DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  participants    MeetingParticipant[]
+  files           MeetingFile[]
+  peers           MeetingPeer[]
+  signals         MeetingSignal[]
+
+  @@index([startsAt])
+  @@index([status])
+}
+
+model MeetingParticipant {
+  id        String   @id @default(cuid())
+  meetingId String
+  meeting   Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rsvp      String   @default("pending")
+  joinedAt  DateTime?
+
+  @@unique([meetingId, userId])
+}
+
+model MeetingFile {
+  id            String   @id @default(cuid())
+  meetingId     String
+  meeting       Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  fileId        String
+  previewFileId String   @default("")
+  createdAt     DateTime @default(now())
+}
+
+model MeetingPeer {
+  id        String    @id @default(cuid())
+  meetingId String
+  meeting   Meeting   @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  audioOn   Boolean   @default(true)
+  videoOn   Boolean   @default(true)
+  screenOn  Boolean   @default(false)
+  joinedAt  DateTime  @default(now())
+  leftAt    DateTime?
+  updatedAt DateTime  @updatedAt
+
+  @@unique([meetingId, userId])
+}
+
+model MeetingSignal {
+  id         String   @id @default(cuid())
+  meetingId  String
+  meeting    Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  fromUserId String
+  toUserId   String   @default("")
+  kind       String
+  payload    String   @default("")
+  createdAt  DateTime @default(now())
+
+  @@index([meetingId, createdAt])
+}
+
 model FundRequest {
   id              String    @id @default(cuid())
   number          String
@@ -527,9 +653,22 @@ model PurchaseRequest {
   ahoUser     User?    @relation("AhoHandler", fields: [ahoUserId], references: [id])
   fundRequest FundRequest?
   items       PurchaseItem[]
+  files       PurchaseRequestFile[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   doneAt      DateTime?
+}
+
+model PurchaseRequestFile {
+  id        String          @id @default(cuid())
+  requestId String
+  request   PurchaseRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  fileId    String
+  sortOrder Int             @default(0)
+  createdAt DateTime        @default(now())
+
+  @@index([requestId])
+  @@index([fileId])
 }
 
 model PurchaseItem {
@@ -542,7 +681,20 @@ model PurchaseItem {
   url       String           @default("")
   note      String           @default("")
   fileId    String           @default("")
+  files     PurchaseItemFile[]
   sortOrder Int              @default(0)
+}
+
+model PurchaseItemFile {
+  id        String       @id @default(cuid())
+  itemId    String
+  item      PurchaseItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  fileId    String
+  sortOrder Int          @default(0)
+  createdAt DateTime     @default(now())
+
+  @@index([itemId])
+  @@index([fileId])
 }
 
 model HrRequest {
@@ -643,6 +795,7 @@ model AppSettings {
   prodDatesNeedApproval Boolean @default(false)
   currentEpisodeId String   @default("")
   officeCidrs      String   @default("")
+  identifyUntil    DateTime?
   chatDek          String   @default("")
   chatBackup       String   @default("")
   chatBackupIv     String   @default("")
@@ -754,17 +907,24 @@ model Task {
   asset          Asset?    @relation(fields: [assetId], references: [id], onDelete: Cascade)
   assigneeId     String?
   assignee       User?     @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  helperId       String?
+  helper         User?     @relation("TaskHelper", fields: [helperId], references: [id])
+  assignedById   String?
+  assignedBy     User?     @relation("TaskAssignedBy", fields: [assignedById], references: [id])
   files          TaskFile[]
   events         TaskEvent[]
   scoreEvents    ProductionScoreEvent[]
   dateChanges    TaskDateChange[]
   libraryLinks   TaskLibraryItem[]
   skills         TaskSkill[]
+  peerLinks      ChatTask[]
   deletedAt      DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
   @@index([assigneeId, status])
+  @@index([helperId])
+  @@index([assignedById])
   @@index([stage, status])
   @@index([scopeKey])
   @@index([jobId])
@@ -796,6 +956,7 @@ model Job {
   members     JobMember[]
   tasks       Task[]
   messages    JobMessage[]
+  peerLinks   ChatTask[]
   deletedAt   DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -857,18 +1018,19 @@ model ProdChatMessage {
 }
 
 model ProdChatFile {
-  id           String          @id @default(cuid())
-  messageId    String
-  message      ProdChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  originalName String
-  mimeType     String          @default("")
-  size         Int             @default(0)
-  fileId       String          @default("")
-  absPath      String          @default("")
-  uncPath      String          @default("")
-  uploadedById String
-  uploadedBy   User            @relation("ProdChatFileUploader", fields: [uploadedById], references: [id])
-  createdAt    DateTime        @default(now())
+  id            String          @id @default(cuid())
+  messageId     String
+  message       ProdChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  originalName  String
+  mimeType      String          @default("")
+  size          Int             @default(0)
+  fileId        String          @default("")
+  previewFileId String          @default("")
+  absPath       String          @default("")
+  uncPath       String          @default("")
+  uploadedById  String
+  uploadedBy    User            @relation("ProdChatFileUploader", fields: [uploadedById], references: [id])
+  createdAt     DateTime        @default(now())
 }
 
 model LibraryItem {
@@ -901,11 +1063,12 @@ model LibraryFile {
   originalName String
   mimeType     String      @default("")
   size         Int         @default(0)
-  fileId       String      @default("")
-  absPath      String      @default("")
-  uncPath      String      @default("")
-  sortOrder    Int         @default(0)
-  createdAt    DateTime    @default(now())
+  fileId        String      @default("")
+  previewFileId String      @default("")
+  absPath       String      @default("")
+  uncPath       String      @default("")
+  sortOrder     Int         @default(0)
+  createdAt     DateTime    @default(now())
 }
 
 model TaskLibraryItem {
@@ -1010,6 +1173,9 @@ model Chat {
   wraps         ChatKeyWrap[]
   messages      ChatMessage[]
   blobs         ChatBlob[]
+  polls         ChatPoll[]
+  asks          ChatAsk[]
+  chatTasks     ChatTask[]
 
   @@index([kind, departmentId])
 }
@@ -1064,6 +1230,9 @@ model ChatMessage {
   deletedAt  DateTime?
   blobs      ChatBlob[]
   reactions  ChatReaction[]
+  poll       ChatPoll?
+  ask        ChatAsk?
+  taskCard   ChatTask?
 
   @@index([chatId, createdAt])
 }
@@ -1079,6 +1248,7 @@ model ChatBlob {
   iv           String
   mime         String      @default("")
   originalName String      @default("")
+  previewId    String      @default("")
   createdById  String
   createdAt    DateTime    @default(now())
 
@@ -1094,6 +1264,119 @@ model ChatReaction {
   emoji     String
 
   @@unique([messageId, userId, emoji])
+}
+
+model ChatPoll {
+  id        String          @id @default(cuid())
+  chatId    String
+  chat      Chat            @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  messageId String          @unique
+  message   ChatMessage     @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User            @relation(fields: [authorId], references: [id])
+  question  String
+  multi     Boolean         @default(false)
+  closedAt  DateTime?
+  createdAt DateTime        @default(now())
+  options   ChatPollOption[]
+  votes     ChatPollVote[]
+
+  @@index([chatId])
+}
+
+model ChatPollOption {
+  id        String         @id @default(cuid())
+  pollId    String
+  poll      ChatPoll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  text      String
+  sortOrder Int            @default(0)
+  votes     ChatPollVote[]
+}
+
+model ChatPollVote {
+  id        String         @id @default(cuid())
+  pollId    String
+  poll      ChatPoll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  optionId  String
+  option    ChatPollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime       @default(now())
+
+  @@unique([optionId, userId])
+  @@index([pollId, userId])
+}
+
+model ChatAsk {
+  id        String          @id @default(cuid())
+  chatId    String
+  chat      Chat            @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  messageId String          @unique
+  message   ChatMessage     @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User            @relation(fields: [authorId], references: [id])
+  title     String
+  body      String          @default("")
+  createdAt DateTime        @default(now())
+  targets   ChatAskTarget[]
+  replies   ChatAskReply[]
+
+  @@index([chatId])
+}
+
+model ChatAskTarget {
+  id     String  @id @default(cuid())
+  askId  String
+  ask    ChatAsk @relation(fields: [askId], references: [id], onDelete: Cascade)
+  userId String
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([askId, userId])
+}
+
+model ChatAskReply {
+  id        String   @id @default(cuid())
+  askId     String
+  ask       ChatAsk  @relation(fields: [askId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  empty     Boolean  @default(false)
+  text      String   @default("")
+  blobJson  String   @default("[]")
+  createdAt DateTime @default(now())
+
+  @@unique([askId, userId])
+}
+
+model ChatTask {
+  id           String      @id @default(cuid())
+  chatId       String
+  chat         Chat        @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  messageId    String      @unique
+  message      ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  authorId     String
+  author       User        @relation("ChatTaskAuthor", fields: [authorId], references: [id])
+  assigneeId   String?
+  assignee     User?       @relation("ChatTaskAssignee", fields: [assigneeId], references: [id])
+  title        String
+  body         String      @default("")
+  dueAt        DateTime?
+  status       String      @default("todo")
+  kind         String      @default("task")
+  prodTaskId   String      @default("")
+  completedAt  DateTime?
+  parentId     String?
+  parent       ChatTask?   @relation("ChatTaskTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children     ChatTask[]  @relation("ChatTaskTree")
+  linkedTaskId String?
+  linkedTask   Task?       @relation(fields: [linkedTaskId], references: [id], onDelete: SetNull)
+  linkedJobId  String?
+  linkedJob    Job?        @relation(fields: [linkedJobId], references: [id], onDelete: SetNull)
+  createdAt    DateTime    @default(now())
+
+  @@index([chatId])
+  @@index([assigneeId, status])
+  @@index([completedAt])
 }
 
 model ChatLinkOffer {

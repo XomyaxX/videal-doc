@@ -6,6 +6,7 @@ import { saveUpload } from "@/lib/files";
 import { parseFnsQr, receiptFingerprint } from "@/lib/qr";
 import { rubToKopecks } from "@/lib/money";
 import { archiveReceipt } from "@/lib/archive";
+import { syncAdvanceReportDate } from "@/lib/pdf/ao1-data";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -88,5 +89,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     },
   });
   await archiveReceipt({ ...row, files: saved.map((f) => ({ fileId: f.id })) }, report.userId);
+  await syncAdvanceReportDate(id);
   return NextResponse.json({ id: row.id, files: saved.length });
 }

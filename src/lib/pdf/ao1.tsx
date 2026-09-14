@@ -33,25 +33,36 @@ const s = StyleSheet.create({
   box: { borderWidth: 0.8, borderColor: ink },
   row: { flexDirection: "row" },
   grow: { flexGrow: 1 },
-  img: { width: 520, maxHeight: 680, objectFit: "contain", marginTop: 8 },
+  imgFrame: {
+    marginTop: 8,
+    width: 531,
+    height: 720,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  img: { width: 531, height: 720, objectFit: "contain" },
   pageBack: {
     fontFamily: "DejaVu",
     fontSize: 8,
     color: ink,
-    paddingTop: 24,
-    paddingBottom: 20,
+    paddingTop: 22,
+    paddingBottom: 24,
     paddingHorizontal: 18,
+    flexDirection: "column",
   },
+  backSpacer: { flexGrow: 1, minHeight: 24 },
 });
 
+const A4: [number, number] = [595.28, 841.89];
+
 const BACK = {
-  n: 24,
-  date: 50,
-  num: 50,
-  name: 108,
-  rub: 52,
-  val: 50,
-  debit: 66,
+  n: 28,
+  date: 56,
+  num: 56,
+  name: 118,
+  rub: 58,
+  val: 56,
+  debit: 73,
 } as const;
 const BACK_COLS = [BACK.n, BACK.date, BACK.num, BACK.name, BACK.rub, BACK.val, BACK.rub, BACK.val, BACK.debit];
 
@@ -144,7 +155,7 @@ export function Ao1Document({ data }: { data: Ao1Data }) {
 
   return (
     <Document>
-      <Page size="A4" orientation="portrait" wrap={false} style={s.page}>
+      <Page size={A4} orientation="portrait" wrap={false} style={s.page}>
         <Text style={[s.tiny, s.right]}>Унифицированная форма № АО-1</Text>
         <Text style={[s.tiny, s.right]}>Утверждена Постановлением Госкомстата России</Text>
         <Text style={[s.tiny, s.right, { marginBottom: 6 }]}>от 01.08.2001 № 55</Text>
@@ -457,8 +468,8 @@ export function Ao1Document({ data }: { data: Ao1Data }) {
         </View>
       </Page>
 
-      <Page size="A4" orientation="portrait" wrap={false} style={s.pageBack}>
-        <Text style={[s.tiny, s.right, { marginBottom: 8 }]}>Оборотная сторона формы № АО-1</Text>
+      <Page size={A4} orientation="portrait" wrap={false} style={s.pageBack}>
+        <Text style={[s.tiny, s.right, { marginBottom: 6 }]}>Оборотная сторона формы № АО-1</Text>
         <View style={s.row}>
           <HeadCell w={BACK.n} h={36}>
             Номер{"\n"}по{"\n"}порядку
@@ -547,7 +558,9 @@ export function Ao1Document({ data }: { data: Ao1Data }) {
           <View style={{ width: BACK.debit }} />
         </View>
 
-        <View style={[s.row, { marginTop: 18, alignItems: "flex-end" }]}>
+        <View style={s.backSpacer} />
+
+        <View style={[s.row, { alignItems: "flex-end" }]}>
           <T style={{ fontSize: 9 }}>Подотчетное лицо</T>
           <View style={[s.line, { width: 140, marginLeft: 10 }]} />
           <View style={[s.line, { width: 180, marginLeft: 16 }]}>
@@ -561,10 +574,16 @@ export function Ao1Document({ data }: { data: Ao1Data }) {
       </Page>
 
       {data.images.map((img, i) => (
-        <Page key={i} size="A4" orientation="portrait" style={s.page}>
+        <Page key={i} size={A4} orientation="portrait" wrap={false} style={s.page}>
           <Text style={{ fontSize: 12, fontWeight: "bold" }}>Приложение {i + 1}</Text>
           <Text style={{ fontSize: 9, marginBottom: 8 }}>{img.title}</Text>
-          {img.dataUrl ? <Image src={img.dataUrl} style={s.img} /> : <Text>Файл без превью (не изображение).</Text>}
+          {img.dataUrl ? (
+            <View style={s.imgFrame}>
+              <Image src={img.dataUrl} style={s.img} />
+            </View>
+          ) : (
+            <Text>Файл без превью (не изображение).</Text>
+          )}
         </Page>
       ))}
     </Document>
@@ -616,7 +635,7 @@ function BodyCell({
     <View
       style={{
         width: w,
-        height: 13,
+        height: 18,
         borderWidth: 0.6,
         borderColor: ink,
         justifyContent: "center",

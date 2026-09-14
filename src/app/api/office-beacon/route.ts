@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requestClientIp } from "@/lib/presence";
+import { isOfficeLanIp, requestLanIp } from "@/lib/presence";
 
 function cors(res: NextResponse) {
   res.headers.set("Access-Control-Allow-Origin", "*");
@@ -14,11 +14,12 @@ export async function OPTIONS() {
 }
 
 export async function GET(req: NextRequest) {
-  const ip = requestClientIp(req);
+  const ip = requestLanIp(req);
   return cors(
     NextResponse.json({
       ok: true,
-      lan: ip.startsWith("192.168.") || ip.startsWith("10.") ? ip : "192.168.1.51",
+      ip,
+      lan: isOfficeLanIp(ip) ? ip : "",
     }),
   );
 }

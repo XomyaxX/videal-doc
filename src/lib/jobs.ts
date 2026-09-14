@@ -56,7 +56,10 @@ export async function canSeeJob(user: SessionUser, jobId: string) {
   if (job.deletedAt) return false;
   const [member, assigned] = await Promise.all([
     prisma.jobMember.findUnique({ where: { jobId_userId: { jobId, userId: user.id } } }),
-    prisma.task.findFirst({ where: { jobId, assigneeId: user.id, deletedAt: null }, select: { id: true } }),
+    prisma.task.findFirst({
+      where: { jobId, deletedAt: null, OR: [{ assigneeId: user.id }, { helperId: user.id }] },
+      select: { id: true },
+    }),
   ]);
   return Boolean(member || assigned);
 }
@@ -76,7 +79,11 @@ export function jobListWhere(user: SessionUser) {
   if (canManageProd(user) || canLeadProd(user)) return alive;
   return {
     ...alive,
-    OR: [{ members: { some: { userId: user.id } } }, { tasks: { some: { assigneeId: user.id } } }, { authorId: user.id }],
+    OR: [
+      { members: { some: { userId: user.id } } },
+      { tasks: { some: { OR: [{ assigneeId: user.id }, { helperId: user.id }] } } },
+      { authorId: user.id },
+    ],
   };
 }
 
@@ -189,6 +196,7 @@ export async function createJobTask(opts: {
       sheetCode: "job",
       scopeKey: "",
       assigneeId: assigneeId || null,
+      assignedById: assigneeId ? opts.user.id : null,
       assigneeLocked: Boolean(assigneeId),
       skills: skills.length ? { create: skills.map((s) => ({ skillId: s.id })) } : undefined,
     },

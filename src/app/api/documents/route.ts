@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
   if (!requireAck && !requireSignedReturn && !requireApproval) {
     return NextResponse.json({ error: "Выберите: ознакомиться, вернуть подписанным и/или согласовать" }, { status: 400 });
   }
-  if (!(file instanceof File)) return NextResponse.json({ error: "Приложите файл" }, { status: 400 });
+  if (!(file instanceof File) || file.size === 0) return NextResponse.json({ error: "Приложите файл" }, { status: 400 });
 
   let users = await prisma.user.findMany({
     where: { deletedAt: null, status: "active" },

@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
               mime: preview.type,
             }
           : null,
-      maxBytes: Math.max(settings?.maxUploadMb || 32, 250) * 1024 * 1024,
+      maxBytes: Math.max(settings?.maxUploadMb || 32, 512) * 1024 * 1024,
     });
     return NextResponse.json({ id: row.id });
   } catch (e) {

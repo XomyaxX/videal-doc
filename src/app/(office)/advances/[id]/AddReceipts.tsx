@@ -18,8 +18,8 @@ export function AddReceipts({ reportId }: { reportId: string }) {
             mode === "qr" ? "border-gold bg-white" : "border-line bg-card hover:border-gold"
           }`}
         >
-          <div className="font-serif text-2xl text-navy">QR кассового чека</div>
-          <p className="mt-1 text-sm text-muted">Камера, фото или PDF. QR ФНС подставит сумму сам.</p>
+          <div className="font-serif text-2xl text-navy">Чек по QR</div>
+          <p className="mt-1 text-sm text-muted">Камера, фото или PDF. QR из приложения банка (ФНС) подставит сумму сам.</p>
         </button>
         <button
           type="button"

@@ -8,11 +8,21 @@ import { fmtDate } from "@/lib/dates";
 import { fullName } from "@/lib/names";
 import { USER_SAFE_SELECT } from "@/lib/user-public";
 
-export default async function AdvancesPage() {
+export default async function AdvancesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string }>;
+}) {
   const user = await requirePermission("finance.create");
+  const { status } = await searchParams;
   const viewAll = can(user, "finance.view_all");
+  const draftOnly = status === "draft";
   const rows = await prisma.advanceReport.findMany({
-    where: { deletedAt: null, ...(viewAll ? {} : { userId: user.id }) },
+    where: {
+      deletedAt: null,
+      ...(viewAll ? {} : { userId: user.id }),
+      ...(draftOnly ? { status: { in: ["draft", "rework"] } } : {}),
+    },
     include: { user: { select: USER_SAFE_SELECT }, receipts: true },
     orderBy: { updatedAt: "desc" },
   });
@@ -31,7 +41,7 @@ export default async function AdvancesPage() {
         }
       />
       {rows.length === 0 ? (
-        <Empty title="Отчётов ещё нет" text="Откройте SCAN и бросьте фото кассовых чеков." />
+        <Empty title="Пока ничего" text="Новый отчёт — кнопка справа сверху." />
       ) : (
         <div className="space-y-3">
           {rows.map((r) => {

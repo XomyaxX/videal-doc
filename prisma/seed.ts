@@ -35,6 +35,7 @@ async function main() {
     { code: "admin", name: "Администратор", description: "Сотрудники, документы, настройки" },
     { code: "accountant", name: "Бухгалтер", description: "Финансы и авансовые отчёты" },
     { code: "manager", name: "Руководитель", description: "Рассылки и согласование" },
+    { code: "sublead", name: "Субруководитель", description: "Назначает в отделе, не утверждает задачи руководства и свои" },
     { code: "employee", name: "Сотрудник", description: "Ознакомление и свои документы" },
   ];
   for (const r of roles) {

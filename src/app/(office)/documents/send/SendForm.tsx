@@ -22,19 +22,51 @@ export function SendForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
-  const [needApprove, setNeedApprove] = useState(false);
+  const [action, setAction] = useState<"ack" | "sign" | "approve">("ack");
   const [approvers, setApprovers] = useState<string[]>([]);
+  const [dueAt, setDueAt] = useState("");
+
+  const recipientCount =
+    mode === "all" ? people.length : mode === "dept" ? "отдел" : selected.length;
+  const actionLabel =
+    action === "ack" ? "ознакомиться" : action === "sign" ? "вернуть скан подписи" : "согласовать руководителем";
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
     setError("");
     const form = new FormData(e.currentTarget);
+    const file = form.get("file");
+    if (!(file instanceof File) || file.size === 0) {
+      setBusy(false);
+      setError("Приложите файл документа");
+      return;
+    }
     if (mode === "all") form.set("all", "true");
     if (mode === "list") selected.forEach((id) => form.append("recipientIds", id));
-    if (needApprove) {
+    form.delete("requireAck");
+    form.delete("requireSignedReturn");
+    form.delete("requireApproval");
+    if (action === "ack") form.set("requireAck", "true");
+    if (action === "sign") form.set("requireSignedReturn", "true");
+    if (action === "approve") {
       form.set("requireApproval", "true");
+      if (approvers.length === 0) {
+        setBusy(false);
+        setError("Выберите, кто согласовывает");
+        return;
+      }
       approvers.forEach((id) => form.append("approverIds", id));
+    }
+    const who =
+      mode === "all" ? `всем (${people.length})` : mode === "list" ? `${selected.length} чел.` : "отделу";
+    if (
+      !confirm(
+        `Разослать: ${who}. Действие: ${actionLabel}.${dueAt ? ` Срок: ${dueAt.replace("T", " ")}.` : ""}`,
+      )
+    ) {
+      setBusy(false);
+      return;
     }
     const res = await fetch("/api/documents", { method: "POST", body: form });
     const data = await res.json();
@@ -123,22 +155,19 @@ export function SendForm({
       <Card>
         <h2 className="font-serif text-xl text-navy">3. Что сделать</h2>
         <div className="mt-4 space-y-2">
-          <label className="flex items-center gap-2">
-            <input type="checkbox" name="requireAck" defaultChecked /> Поставить галочку «ознакомился»
-          </label>
-          <label className="flex items-center gap-2">
-            <input type="checkbox" name="requireSignedReturn" /> Распечатать, подписать и загрузить скан
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              name="requireApproval"
-              checked={needApprove}
-              onChange={(e) => setNeedApprove(e.target.checked)}
-            />{" "}
-            Согласовать с руководителем (галочка «согласовано»)
-          </label>
-          {needApprove ? (
+          {(
+            [
+              ["ack", "Ознакомиться"],
+              ["sign", "Вернуть скан подписи"],
+              ["approve", "Согласовать руководителем"],
+            ] as const
+          ).map(([id, label]) => (
+            <label key={id} className="flex items-center gap-2">
+              <input type="radio" name="actionKind" checked={action === id} onChange={() => setAction(id)} />
+              {label}
+            </label>
+          ))}
+          {action === "approve" ? (
             <div className="rounded-xl border border-line bg-white p-3">
               <p className="mb-2 text-sm font-semibold text-navy">Кто согласовывает</p>
               <div className="max-h-48 overflow-auto">
@@ -162,14 +191,18 @@ export function SendForm({
             </div>
           ) : null}
           <label className="flex items-center gap-2">
-            <input type="checkbox" name="remindDaily" defaultChecked /> Напоминать каждый день, пока не сделают
+            <input type="checkbox" name="remindDaily" /> Напоминать каждый день, пока не сделают
           </label>
           <Field label="Срок">
-            <Input name="dueAt" type="datetime-local" />
+            <Input name="dueAt" type="datetime-local" value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
           </Field>
         </div>
       </Card>
 
+      <p className="text-sm text-muted">
+        Кому: {typeof recipientCount === "number" ? `${recipientCount} чел.` : recipientCount}. Действие: {actionLabel}
+        {dueAt ? `. Срок: ${dueAt.replace("T", " ")}` : ""}.
+      </p>
       <Button type="submit" disabled={busy} className="h-12 px-8 text-base">
         {busy ? "Отправляем…" : "Разослать"}
       </Button>

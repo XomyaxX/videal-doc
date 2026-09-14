@@ -20,10 +20,11 @@ export default async function LoginPage({
   return (
     <div className="flex min-h-full flex-col items-center justify-center px-4 py-12">
       <LoginForm add={Boolean(add)} orgShort={orgNameShort(org)} next={next} />
-      <div className="mt-6 w-full max-w-md text-center text-sm text-muted">
-        Общий компьютер? Закройте список учёток PIN-кодом.
+      <details className="mt-6 w-full max-w-md text-center text-sm text-muted">
+        <summary className="cursor-pointer font-semibold text-navy">Дополнительно</summary>
+        <p className="mt-2">Общий компьютер? Закройте список учёток PIN-кодом.</p>
         <PinSetup />
-      </div>
+      </details>
     </div>
   );
 }

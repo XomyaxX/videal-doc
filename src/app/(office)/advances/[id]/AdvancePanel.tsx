@@ -10,6 +10,7 @@ export function AdvancePanel({
   issued,
   canEdit,
   canApprove,
+  canRecall,
   accountantEmail,
 }: {
   id: string;
@@ -18,6 +19,7 @@ export function AdvancePanel({
   issued: string;
   canEdit: boolean;
   canApprove: boolean;
+  canRecall: boolean;
   accountantEmail: string;
 }) {
   const [note, setNote] = useState("");
@@ -79,6 +81,12 @@ export function AdvancePanel({
       <Button href={`/api/advances/${id}/xlsx`} variant="secondary">
         Скачать Excel (АО-1)
       </Button>
+
+      {canRecall ? (
+        <Button className="w-full" variant="secondary" disabled={busy} onClick={() => act("recall")}>
+          Отозвать с проверки
+        </Button>
+      ) : null}
 
       {canEdit ? (
         <div className="space-y-2">
