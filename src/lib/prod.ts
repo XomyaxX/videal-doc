@@ -1,6 +1,6 @@
 import type { SessionUser } from "./types";
 import { userCan } from "./types";
-import { AI_ONLY_STAGES, parsePipelineKind } from "./prod-kinds";
+import { AI_ONLY_STAGES, isProgrammingDept, parsePipelineKind } from "./prod-kinds";
 
 export const PROD_STATUSES = ["todo", "wip", "done", "revise", "approved", "na", "blocked"] as const;
 export type ProdStatus = (typeof PROD_STATUSES)[number];
@@ -172,6 +172,10 @@ export function canManageProd(user: SessionUser): boolean {
   return userCan(user, "prod.manage") || user.prodScope === "studio";
 }
 
+export function userDeptNames(user: { departmentName?: string | null; extraDeptNames?: string[] | null }) {
+  return [...new Set([user.departmentName, ...(user.extraDeptNames || [])].filter(Boolean) as string[])];
+}
+
 export function canLeadProd(
   user: SessionUser,
   stage?: string,
@@ -181,29 +185,30 @@ export function canLeadProd(
   if (canManageProd(user)) return true;
   if (!userCan(user, "prod.lead")) return false;
   if (user.prodScope === "studio") return true;
-  const dept = user.departmentName;
-  if (!dept) return false;
+  const names = userDeptNames(user);
+  if (!names.length) return false;
   const kind = pipelineKind ? parsePipelineKind(pipelineKind) : null;
   if (kind === "ai" || (stage && AI_ONLY_STAGES.has(stage))) {
-    return dept === "ИИ" || assigneeDept === "ИИ";
+    return names.some((n) => isProgrammingDept(n)) || isProgrammingDept(assigneeDept);
   }
-  if (assigneeDept && assigneeDept === dept) return true;
-  if (!stage) return dept === user.departmentName;
+  if (assigneeDept && names.includes(assigneeDept)) return true;
+  if (!stage) return true;
   if (stage === "task") return true;
-  if (PREPROD_STAGES.has(stage)) return dept !== "ИИ";
-  if (ANIM_STAGES.has(stage)) return dept === "Анимация";
-  if (MODEL_STAGES.has(stage)) return dept === "Производство";
-  if (stage === "edit") return dept === "ИИ";
+  if (PREPROD_STAGES.has(stage)) return names.some((n) => !isProgrammingDept(n));
+  if (ANIM_STAGES.has(stage)) return names.includes("Анимация");
+  if (MODEL_STAGES.has(stage)) return names.includes("Производство");
+  if (stage === "edit") return names.some((n) => isProgrammingDept(n));
   return false;
 }
 
 export function canWorkTask(user: SessionUser, assigneeId: string | null, helperId?: string | null): boolean {
-  if (canManageProd(user) || userCan(user, "prod.lead")) return true;
+  if (canManageProd(user)) return true;
   if (!userCan(user, "prod.work")) return false;
   return assigneeId === user.id || helperId === user.id;
 }
 
-export const APPROVE_DENIED = "Утвердить может руководитель, который ставил задачу";
+export const APPROVE_DENIED =
+  "Субрежиссёр не утверждает свои задачи и те, что поставил полный руководитель студии";
 
 export function isSubLead(user: { roleCode?: string; role?: { code: string } | null }) {
   return leadRoleCode(user) === "sublead";

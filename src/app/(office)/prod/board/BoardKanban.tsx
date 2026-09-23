@@ -51,7 +51,7 @@ export function BoardKanban({
     const res = await fetch(`/api/prod/tasks/${id}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status, comment: "перенос с доски" }),
+      body: JSON.stringify({ status }),
     });
     const data = await res.json().catch(() => ({}));
     setBusy(false);

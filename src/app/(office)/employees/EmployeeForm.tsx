@@ -14,6 +14,7 @@ export function EmployeeForm({
   skills,
   initial,
   initialSkillIds,
+  extraDeptIds,
 }: {
   roles: Opt[];
   departments: Opt[];
@@ -22,6 +23,7 @@ export function EmployeeForm({
   skills?: SkillOpt[];
   initial?: Record<string, string>;
   initialSkillIds?: string[];
+  extraDeptIds?: string[];
 }) {
   const [error, setError] = useState("");
   const [temp, setTemp] = useState("");
@@ -35,10 +37,11 @@ export function EmployeeForm({
     const fd = new FormData(e.currentTarget);
     const body = Object.fromEntries(fd.entries());
     const skillIds = fd.getAll("skillIds").map(String);
+    const extraDeptIds = fd.getAll("extraDeptIds").map(String);
     const res = await fetch(isEdit ? `/api/users/${initial!.id}` : "/api/users", {
       method: isEdit ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...body, skillIds }),
+      body: JSON.stringify({ ...body, skillIds, extraDeptIds }),
     });
     const data = await res.json();
     setBusy(false);
@@ -124,6 +127,19 @@ export function EmployeeForm({
             </option>
           ))}
         </Select>
+      </Field>
+      <Field
+        label="Ещё отделы в производстве"
+        hint="Доступ к пайплайну этих отделов, кроме основного. Сотруднику достаточно открыть производство заново — выходить из учётки не нужно. Полные руководители студии и так видят всё."
+      >
+        <div className="flex flex-col gap-1">
+          {departments.map((p) => (
+            <label key={p.id} className="flex items-center gap-2 text-sm">
+              <input type="checkbox" name="extraDeptIds" value={p.id} defaultChecked={(extraDeptIds || []).includes(p.id)} />
+              {p.name}
+            </label>
+          ))}
+        </div>
       </Field>
       <Field label="Уровень доступа">
         <Select name="roleId" defaultValue={initial?.roleId} required>

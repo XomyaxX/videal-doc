@@ -145,6 +145,7 @@ export default async function MyProdPage() {
                 <Card className="hover:border-gold">
                   <div className="text-xs text-muted">Крупная{j.episode ? ` · ${j.episode.code}` : ""}</div>
                   <div className="font-semibold text-navy">{j.title}</div>
+                  {j.description ? <p className="mt-1 line-clamp-2 text-sm text-muted">{j.description}</p> : null}
                   <div className="mt-2">
                     <ProgressBar value={p.pct} label={`${p.pct}%`} hint={`${p.total} подзадач`} />
                   </div>
@@ -190,6 +191,7 @@ export default async function MyProdPage() {
                           <Pill tone={STATUS_PILL[t.status]}>{STAGE_LABEL[t.stage]}</Pill>
                           <span className="font-semibold">{taskTitle(t)}</span>
                         </div>
+                        {t.brief ? <p className="mt-2 line-clamp-2 text-sm text-navy">{t.brief}</p> : null}
                         <p className="mt-2 text-sm text-muted">
                           {pairNames(t.assignee, t.helper)}
                           {" · "}
@@ -198,7 +200,7 @@ export default async function MyProdPage() {
                             : "срок ещё не проставлен"}
                         </p>
                       </Link>
-                      <QuickTask id={t.id} status={t.status} />
+                      {t.assigneeId === user.id || t.helperId === user.id ? <QuickTask id={t.id} status={t.status} /> : null}
                     </Card>
                   ))}
                 </div>

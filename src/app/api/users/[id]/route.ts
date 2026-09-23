@@ -69,6 +69,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       await prisma.userSkill.createMany({ data: ids.map((skillId: string) => ({ userId: id, skillId })) });
     }
   }
+  if (Array.isArray(body?.extraDeptIds)) {
+    const primary = (data.departmentId as string | null) || target.departmentId;
+    const ids = [...new Set((body.extraDeptIds as unknown[]).map((x) => String(x)).filter((did) => did && did !== primary))];
+    await prisma.userDepartmentAccess.deleteMany({ where: { userId: id } });
+    if (ids.length) {
+      await prisma.userDepartmentAccess.createMany({ data: ids.map((departmentId) => ({ userId: id, departmentId })) });
+    }
+  }
   await audit({ userId: session.user.id, action: "user.update", entity: "user", entityId: id });
   const { syncOfficialChats } = await import("@/lib/chat-official");
   await syncOfficialChats(true);

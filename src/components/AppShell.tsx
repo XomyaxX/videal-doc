@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   Bell,
+  CalendarCheck,
   CalendarDays,
   Boxes,
   ClipboardCheck,
@@ -51,6 +52,7 @@ const NAV = [
   { href: "/finance", label: "Финансы", icon: FileStack, perm: "finance.create" as const, section: "papers" },
   { href: "/employees", label: "Сотрудники", icon: Users, perm: "users.view" as const, section: "office" },
   { href: "/inventory", label: "Инвентарь", icon: Boxes, perm: null, section: "office" },
+  { href: "/duty", label: "Графики", icon: CalendarCheck, perm: null, section: "office" },
   { href: "/control", label: "Контроль", icon: ClipboardCheck, perm: "presence.review" as const, section: "office" },
   { href: "/profile", label: "Профиль", icon: UserRound, perm: null, section: "cabinet" },
   { href: "/admin", label: "Админка", icon: Settings, perm: "users.manage" as const, section: "cabinet" },
@@ -104,7 +106,7 @@ function NavLink({
   );
 }
 
-const EMPLOYEE_PRIMARY = ["/", "/chat", "/prod", "/documents", "/finance", "/calendar", "/meet"];
+const EMPLOYEE_PRIMARY = ["/", "/chat", "/prod", "/documents", "/finance", "/calendar", "/meet", "/duty"];
 
 function slimEmployeeNav(user: SessionUser) {
   return user.roleCode === "employee" && !userCan(user, "users.manage") && !userCan(user, "prod.manage");

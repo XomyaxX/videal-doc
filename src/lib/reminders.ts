@@ -2,11 +2,13 @@ import { prisma } from "./prisma";
 import { notify } from "./notify";
 import { documentUrgency } from "./notify-urgency";
 import { tickBirthdays } from "./birthdays";
+import { tickDuty } from "./duty";
 import { officeYmd } from "./dates";
 import { daysUntilYmd, dueLabel, issuedYmd, reportDueYmd } from "./report-period";
 
 export async function tickReminders() {
   tickBirthdays().catch(() => {});
+  tickDuty().catch((e) => console.error("duty", e));
   const settings = await prisma.appSettings.findUnique({ where: { id: "default" } });
   const last = settings?.lastRemindAt;
   const now = new Date();

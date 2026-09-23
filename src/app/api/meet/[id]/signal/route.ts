@@ -1,16 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { requireMeetAccess } from "@/lib/meet";
+import { meetActor } from "@/lib/meet-guest";
 
 const KINDS = new Set(["offer", "answer", "ice", "leave", "bye", "state"]);
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Нужно войти" }, { status: 401 });
   const { id } = await ctx.params;
-  const meet = await requireMeetAccess(session.user, id);
-  if (!meet) return NextResponse.json({ error: "Нет совещания" }, { status: 404 });
+  const actor = await meetActor(id);
+  if (!actor) return NextResponse.json({ error: "Нет доступа" }, { status: 403 });
   const after = String(req.nextUrl.searchParams.get("after") || "");
   const since = after
     ? (await prisma.meetingSignal.findUnique({ where: { id: after }, select: { createdAt: true } }))?.createdAt
@@ -21,8 +18,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   const rows = await prisma.meetingSignal.findMany({
     where: {
       meetingId: id,
-      fromUserId: { not: session.user.id },
-      OR: [{ toUserId: "" }, { toUserId: session.user.id }],
+      fromUserId: { not: actor.id },
+      OR: [{ toUserId: "" }, { toUserId: actor.id }],
       ...(since ? { createdAt: { gte: since } } : { createdAt: { gte: new Date(Date.now() - 15 * 1000) } }),
     },
     orderBy: { createdAt: "asc" },
@@ -41,11 +38,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 }
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Нужно войти" }, { status: 401 });
   const { id } = await ctx.params;
-  const meet = await requireMeetAccess(session.user, id);
-  if (!meet) return NextResponse.json({ error: "Нет совещания" }, { status: 404 });
+  const actor = await meetActor(id);
+  if (!actor) return NextResponse.json({ error: "Нет доступа" }, { status: 403 });
   const body = await req.json().catch(() => null);
   const kind = String(body?.kind || "");
   if (!KINDS.has(kind)) return NextResponse.json({ error: "Сигнал" }, { status: 400 });
@@ -53,7 +48,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const row = await prisma.meetingSignal.create({
     data: {
       meetingId: id,
-      fromUserId: session.user.id,
+      fromUserId: actor.id,
       toUserId: String(body?.toUserId || "").slice(0, 40),
       kind,
       payload,

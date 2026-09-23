@@ -9,6 +9,7 @@ export function TaskPanel({
   status,
   canLead,
   canApprove,
+  canWork,
   people,
   assigneeId,
   helperId,
@@ -18,6 +19,7 @@ export function TaskPanel({
   status: string;
   canLead: boolean;
   canApprove: boolean;
+  canWork: boolean;
   people: { id: string; name: string }[];
   assigneeId: string;
   helperId: string;
@@ -37,6 +39,20 @@ export function TaskPanel({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: next, comment: note, ...extra }),
+    });
+    const data = await res.json();
+    setBusy(false);
+    if (!res.ok) setError(data.error || "Ошибка");
+    else window.location.reload();
+  }
+
+  async function assign() {
+    setBusy(true);
+    setError("");
+    const res = await fetch(`/api/prod/tasks/${id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ assigneeId: who, helperId: help }),
     });
     const data = await res.json();
     setBusy(false);
@@ -74,14 +90,16 @@ export function TaskPanel({
     <div className="space-y-4">
       <ErrorText>{error}</ErrorText>
       <div className="flex flex-wrap gap-2">
-        {status !== "wip" && (
+        {canWork && status !== "wip" ? (
           <Button disabled={busy} onClick={() => act("wip")}>
             В работу
           </Button>
-        )}
-        <Button disabled={busy} variant="gold" onClick={() => act("done")}>
-          Сдать
-        </Button>
+        ) : null}
+        {canWork ? (
+          <Button disabled={busy} variant="gold" onClick={() => act("done")}>
+            Сдать
+          </Button>
+        ) : null}
         <Button disabled={busy} variant="secondary" onClick={() => act("blocked", { blockedReason: note })}>
           Ждём
         </Button>
@@ -94,6 +112,11 @@ export function TaskPanel({
               На правки
             </Button>
           </>
+        ) : null}
+        {canLead && status !== "na" ? (
+          <Button disabled={busy} variant="ghost" onClick={() => act("na")}>
+            Не нужен
+          </Button>
         ) : null}
       </div>
       {canLead && !canApprove ? <p className="text-sm text-muted">{APPROVE_DENIED}</p> : null}
@@ -117,7 +140,7 @@ export function TaskPanel({
           </Button>
         </div>
       </Field>
-      <Field label="Файл сдачи" hint="mp4, png, jpg, pdf. Нужен, чтобы сдать задачу. Blend — ссылкой на шаре.">
+      <Field label="Файл сдачи" hint="Необязательно. mp4, png, jpg, pdf. Blend — ссылкой на шаре.">
         <input
           type="file"
           accept=".mp4,.webm,.mov,.png,.jpg,.jpeg,.webp,.pdf,.gif"
@@ -153,11 +176,7 @@ export function TaskPanel({
             </Select>
           </Field>
           <div className="sm:col-span-2">
-            <Button
-              variant="secondary"
-              disabled={busy}
-              onClick={() => act(status, { assigneeId: who, helperId: help })}
-            >
+            <Button variant="secondary" disabled={busy} onClick={() => void assign()}>
               Назначить
             </Button>
           </div>

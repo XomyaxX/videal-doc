@@ -316,8 +316,20 @@ li.bd-drop-over {
   to { transform: scaleX(1); opacity: 1; }
 }
 
+@keyframes chat-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes chat-pop {
+  0% { transform: scale(0.82); opacity: 0; }
+  70% { transform: scale(1.08); }
+  100% { transform: scale(1); opacity: 1; }
+}
+.chat-rise { animation: chat-rise 0.16s ease both; }
+.chat-pop { animation: chat-pop 0.28s ease both; }
+
 @media (prefers-reduced-motion: reduce) {
-  .bd-shot, .bd-card, .bd-pop, .bd-stage > i, .bd-fold {
+  .bd-shot, .bd-card, .bd-pop, .bd-stage > i, .bd-fold, .chat-rise, .chat-pop {
     animation: none;
     transition: none;
   }

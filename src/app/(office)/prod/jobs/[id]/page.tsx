@@ -9,6 +9,7 @@ import { taskTitle } from "@/lib/prod-server";
 import { ProgressBar } from "@/components/ProgressBar";
 import { fullName } from "@/lib/names";
 import { fmtDate } from "@/lib/dates";
+import { BriefBlock } from "../../BriefBlock";
 import { JobChat } from "./JobChat";
 import { JobSubtasks } from "./JobSubtasks";
 import { JobTeam } from "./JobTeam";
@@ -64,7 +65,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     <div>
       <PageHeader
         title={job.title}
-        subtitle={job.description}
+        subtitle="Крупная задача"
         actions={
           <div className="flex gap-2">
             <Button href="/prod/jobs" variant="secondary">
@@ -83,6 +84,15 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         <Pill tone={job.status === "done" ? "ok" : "wait"}>{job.status === "done" ? "Готово" : "В работе"}</Pill>
         {job.episode ? <span className="text-sm text-muted">{job.episode.code} · {job.episode.name}</span> : null}
         {job.dueAt ? <span className="text-sm text-muted">до {fmtDate(job.dueAt)}</span> : null}
+      </div>
+      <div className="mb-6">
+        <BriefBlock
+          text={job.description}
+          canEdit={(lead || job.authorId === user.id) && !job.deletedAt}
+          saveUrl={`/api/prod/jobs/${job.id}`}
+          field="description"
+          method="PUT"
+        />
       </div>
       <Card className="mb-6">
         <ProgressBar
@@ -131,6 +141,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     <Link href={`/prod/tasks/${t.id}`} className="font-semibold text-navy hover:text-gold">
                       {taskTitle(t)}
                     </Link>
+                    {t.brief ? <p className="mt-1 line-clamp-2 text-sm text-muted">{t.brief}</p> : null}
                     <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
                       <Pill tone={STATUS_PILL[t.status]}>{STATUS_LABEL[t.status]}</Pill>
                       {t.kind !== "job" ? <span className="text-muted">{STAGE_LABEL[t.stage] || t.stage}</span> : null}

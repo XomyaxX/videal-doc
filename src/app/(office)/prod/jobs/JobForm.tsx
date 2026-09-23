@@ -54,8 +54,12 @@ export function JobForm({
       <Field label="Название">
         <Input name="title" required placeholder="Персонаж Ксюша, препрод серии 3…" />
       </Field>
-      <Field label="Описание">
-        <Textarea name="description" placeholder="Что должно получиться, для кого, к какому сроку" />
+      <Field label="ТЗ / описание" hint="Это увидит вся команда крупной задачи.">
+        <Textarea
+          name="description"
+          className="min-h-[160px]"
+          placeholder="Что должно получиться, для кого, ограничения, референсы"
+        />
       </Field>
       <Field label="Серия">
         <Select name="episodeId" defaultValue={currentEpisodeId}>

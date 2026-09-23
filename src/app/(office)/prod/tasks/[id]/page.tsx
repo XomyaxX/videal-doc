@@ -17,6 +17,7 @@ import { canSeeJob } from "@/lib/jobs";
 import { ASSIGNED_BY_SELECT, taskTitle } from "@/lib/prod-server";
 import { fullName, pairNames } from "@/lib/names";
 import { fmtDate, officeYmd } from "@/lib/dates";
+import { BriefBlock } from "../../BriefBlock";
 import { TaskPanel } from "./TaskPanel";
 import { DateEditor } from "./DateEditor";
 import { TaskLibrary } from "./TaskLibrary";
@@ -45,7 +46,7 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
       episode: { include: { show: { select: { pipelineKind: true, name: true } } } },
       files: { orderBy: { createdAt: "desc" } },
       events: { include: { user: { select: USER_SAFE_SELECT } }, orderBy: { createdAt: "desc" }, take: 80 },
-      job: { select: { id: true, title: true } },
+      job: { select: { id: true, title: true, description: true } },
       skills: { include: { skill: true } },
       libraryLinks: {
         include: {
@@ -176,9 +177,28 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
               <span className="text-sm text-muted">дедлайн не проставлен</span>
             )}
           </div>
+          <div className="mt-4">
+            <BriefBlock
+              text={task.brief}
+              canEdit={lead && !task.deletedAt}
+              saveUrl={`/api/prod/tasks/${task.id}`}
+              field="brief"
+              method="POST"
+              hint={
+                !task.brief && task.job?.description
+                  ? "Своё ТЗ ещё не написали — ниже постановка крупной задачи."
+                  : undefined
+              }
+            />
+          </div>
+          {!task.brief && task.job?.description ? (
+            <p className="mt-3 whitespace-pre-wrap rounded-xl bg-paper px-3 py-2 text-sm text-navy">
+              <span className="font-semibold">Крупная задача: </span>
+              {task.job.description}
+            </p>
+          ) : null}
           {task.shot?.description ? <p className="mt-3">{task.shot.description}</p> : null}
           {task.asset?.description ? <p className="mt-3 whitespace-pre-wrap">{task.asset.description}</p> : null}
-          {task.comment ? <p className="mt-3 text-muted">{task.comment}</p> : null}
           {task.blockedReason ? (
             <p className="mt-3 rounded-xl bg-[var(--warn-bg)] px-3 py-2 text-sm">{task.blockedReason}</p>
           ) : null}
@@ -218,6 +238,7 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
                 status={task.status}
                 canLead={lead}
                 canApprove={canApprove}
+                canWork={work}
                 people={people.map((p) => ({ id: p.id, name: fullName(p) }))}
                 assigneeId={task.assigneeId || ""}
                 helperId={task.helperId || ""}

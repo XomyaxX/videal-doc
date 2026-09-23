@@ -3,7 +3,8 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { notifyMany } from "@/lib/notify";
 import { audit } from "@/lib/audit";
-import { canCreateMeet, serializeMeet } from "@/lib/meet";
+import { canCreateMeet, meetListWhere, parseDestinations, serializeMeet } from "@/lib/meet";
+import { newGuestLinkToken } from "@/lib/meet-guest";
 
 const include = {
   author: { select: { id: true, lastName: true, firstName: true, middleName: true, photoFileId: true } },
@@ -11,6 +12,7 @@ const include = {
     include: { user: { select: { id: true, lastName: true, firstName: true, middleName: true, photoFileId: true } } },
   },
   files: true,
+  viewers: { select: { userId: true } },
 };
 
 async function withFiles<T extends { files: { fileId: string }[] }>(rows: T[]) {
@@ -25,10 +27,7 @@ export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Нужно войти" }, { status: 401 });
   const rows = await prisma.meeting.findMany({
-    where: {
-      deletedAt: null,
-      OR: [{ authorId: session.user.id }, { participants: { some: { userId: session.user.id } } }],
-    },
+    where: meetListWhere(session.user),
     include,
     orderBy: { startsAt: "asc" },
     take: 80,
@@ -84,6 +83,10 @@ export async function POST(req: NextRequest) {
     },
   });
 
+  const visibility =
+    body?.visibility === "custom" || body?.visibility === "participants_and_managers" ? body.visibility : "participants";
+  const destinations = JSON.stringify(parseDestinations(JSON.stringify(body?.destinations || ["meeting_card", "notify_participants"])));
+  const viewerIds = Array.isArray(body?.viewerIds) ? body.viewerIds.map(String) : [];
   const meet = await prisma.meeting.create({
     data: {
       title,
@@ -93,12 +96,21 @@ export async function POST(req: NextRequest) {
       endsAt,
       authorId: session.user.id,
       calendarEventId: cal.id,
+      recordConsent: Boolean(body?.recordConsent),
+      guestEnabled: Boolean(body?.guestEnabled),
+      guestToken: newGuestLinkToken(),
+      visibility,
+      destinations,
       participants: {
         create: ids.map((userId) => ({
           userId,
           rsvp: userId === session.user.id ? "yes" : "pending",
         })),
       },
+      viewers:
+        visibility === "custom"
+          ? { create: viewerIds.filter((id: string) => id !== session.user.id).map((userId: string) => ({ userId })) }
+          : undefined,
     },
     include,
   });

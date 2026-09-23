@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Check, CheckCheck, Forward, ImagePlus, Paperclip, Pencil, Pin, Plus, Reply, Search, Send, Users, VolumeX, X } from "lucide-react";
+import { ArrowLeft, Check, CheckCheck, ChevronDown, Forward, ImagePlus, Paperclip, Pencil, Pin, Plus, Reply, Search, Send, Users, VolumeX, X } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
 import { Button, ErrorText, Input } from "@/components/ui";
 import { previewText, type ChatAskDto, type ChatPayload, type ChatPollDto, type ChatTaskDto } from "@/lib/chat-types";
@@ -88,6 +88,21 @@ function shortTime(iso: string) {
 function otherName(c: InboxChat, meId: string) {
   if (c.kind !== "direct") return c.title || (c.kind === "studio" ? "Студия" : "Беседа");
   return c.members.find((m) => m.id !== meId)?.fullName || "Диалог";
+}
+
+function isOnline(iso: string | null | undefined) {
+  if (!iso) return false;
+  const t = new Date(iso).getTime();
+  return !Number.isNaN(t) && Date.now() - t < 3 * 60 * 1000;
+}
+
+function FaceDot({ online, children }: { online?: boolean; children: React.ReactNode }) {
+  return (
+    <span className="relative inline-flex shrink-0">
+      {children}
+      {online ? <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-gold ring-2 ring-card chat-pop" /> : null}
+    </span>
+  );
 }
 
 function GroupFace({ avatarFileId, title, size = 44 }: { avatarFileId: string; title: string; size?: number }) {
@@ -230,52 +245,74 @@ export function ChatApp({
         <div className="min-h-0 flex-1 overflow-auto">
           {filtered.length === 0 ? (
             <div className="px-4 py-10 text-center">
-              <p className="text-sm text-muted">{unreadOnly ? "Всё прочитано." : "Пока пусто."}</p>
+              <p className="font-serif text-lg text-navy">{unreadOnly ? "Всё прочитано" : "Напишите коллеге"}</p>
+              <p className="mt-1 text-sm text-muted">{unreadOnly ? "Новых сообщений нет." : "Чат появится здесь."}</p>
               <Button className="mt-3" type="button" onClick={() => void openPeople(false)}>
                 Написать
               </Button>
             </div>
           ) : null}
-          {filtered.map((c) => {
-            const title = otherName(c, me.id);
-            const other = c.members.find((m) => m.id !== me.id);
-            const active = c.id === chatId;
+          {(() => {
+            const pinned = filtered.filter((c) => c.pinnedAt);
+            const official = filtered.filter((c) => !c.pinnedAt && (c.official || c.kind === "studio" || c.kind === "dept"));
+            const rest = filtered.filter((c) => !c.pinnedAt && !(c.official || c.kind === "studio" || c.kind === "dept"));
+            const block = (label: string, items: InboxChat[]) =>
+              items.length ? (
+                <div key={label} className="pb-2">
+                  {label ? <p className="px-3 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">{label}</p> : null}
+                  {items.map((c) => {
+                    const title = otherName(c, me.id);
+                    const other = c.members.find((m) => m.id !== me.id);
+                    const active = c.id === chatId;
+                    return (
+                      <Link
+                        key={c.id}
+                        href={`/chat/${c.id}`}
+                        className={`flex items-center gap-3 px-3 py-2.5 transition-colors ${active ? "bg-paper" : "hover:bg-paper/70"}`}
+                      >
+                        <FaceDot online={c.kind === "direct" && isOnline(other?.lastSeenAt || null)}>
+                          {c.kind !== "direct" ? (
+                            <GroupFace avatarFileId={c.avatarFileId} title={title} />
+                          ) : (
+                            <Avatar photoFileId={other?.photoFileId} lastName={other?.lastName || "?"} firstName={other?.firstName || "?"} size={44} />
+                          )}
+                        </FaceDot>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-2">
+                            <span className={`min-w-0 truncate text-sm ${c.unreadCount ? "font-bold text-navy" : "font-semibold text-navy"}`}>
+                              {title}
+                            </span>
+                            {c.pinnedAt ? <Pin size={12} className="shrink-0 text-gold" /> : null}
+                            {c.mutedUntil ? <VolumeX size={12} className="shrink-0 text-muted" /> : null}
+                            <span className="ml-auto shrink-0 text-[11px] text-muted">{shortTime(c.lastMessageAt)}</span>
+                          </span>
+                          <span className="block truncate text-xs text-muted">{c.last?.preview || " "}</span>
+                        </span>
+                        {c.unreadCount > 0 ? (
+                          <span className="chat-pop rounded-full bg-gold px-2 py-0.5 text-xs font-bold text-white">{c.unreadCount}</span>
+                        ) : null}
+                      </Link>
+                    );
+                  })}
+                </div>
+              ) : null;
             return (
-              <Link
-                key={c.id}
-                href={`/chat/${c.id}`}
-                className={`flex items-center gap-3 px-3 py-2.5 ${active ? "bg-paper" : "hover:bg-paper/70"}`}
-              >
-                {c.kind !== "direct" ? (
-                  <GroupFace avatarFileId={c.avatarFileId} title={title} />
-                ) : (
-                  <Avatar photoFileId={other?.photoFileId} lastName={other?.lastName || "?"} firstName={other?.firstName || "?"} size={44} />
-                )}
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2">
-                    <span className={`min-w-0 truncate text-sm ${c.unreadCount ? "font-bold text-navy" : "font-semibold text-navy"}`}>
-                      {title}
-                    </span>
-                    {c.pinnedAt ? <Pin size={12} className="shrink-0 text-gold" /> : null}
-                    {c.mutedUntil ? <VolumeX size={12} className="shrink-0 text-muted" /> : null}
-                    <span className="ml-auto shrink-0 text-[11px] text-muted">{shortTime(c.lastMessageAt)}</span>
-                  </span>
-                  <span className="block truncate text-xs text-muted">{c.last?.preview || " "}</span>
-                </span>
-                {c.unreadCount > 0 ? (
-                  <span className="rounded-full bg-gold px-2 py-0.5 text-xs font-bold text-white">{c.unreadCount}</span>
-                ) : null}
-              </Link>
+              <>
+                {block("Закреплённые", pinned)}
+                {block("Студия", official)}
+                {block(pinned.length || official.length ? "Чаты" : "", rest)}
+              </>
             );
-          })}
+          })()}
         </div>
       </aside>
       <section className={`min-h-0 min-w-0 flex-1 flex-col ${chatId ? "flex" : "hidden md:flex"}`}>
         {chatId ? (
           <Thread me={me} chatId={chatId} inbox={inbox} canLead={canLead} canAward={canAward} onChanged={() => void refreshInbox()} />
         ) : (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-sm text-muted">
-            <p>Выберите чат слева или напишите коллеге</p>
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-[#efeae0] p-6 text-center">
+            <p className="font-serif text-2xl text-navy">Переписка студии</p>
+            <p className="text-sm text-muted">Выберите чат слева или напишите коллеге</p>
             <Button type="button" onClick={() => void openPeople(false)}>
               Написать
             </Button>
@@ -356,7 +393,7 @@ function PeopleModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-navy/40 p-0 md:items-center md:p-6">
-      <div className="flex max-h-[90vh] w-full max-w-lg flex-col rounded-t-3xl bg-card p-4 shadow-[var(--shadow)] md:rounded-2xl">
+      <div className="chat-pop flex max-h-[90vh] w-full max-w-lg flex-col rounded-t-3xl bg-card p-4 shadow-[var(--shadow)] md:rounded-2xl">
         <div className="mb-3 flex items-center justify-between">
           <p className="font-serif text-xl text-navy">{group ? "Новая беседа" : "Написать"}</p>
           <button type="button" className="text-sm text-muted" onClick={onClose}>
@@ -382,7 +419,9 @@ function PeopleModal({
                 } else onDirect(p);
               }}
             >
-              <Avatar photoFileId={p.photoFileId} lastName={p.lastName} firstName={p.firstName} size={40} />
+              <FaceDot online={isOnline(p.lastSeenAt)}>
+                <Avatar photoFileId={p.photoFileId} lastName={p.lastName} firstName={p.firstName} size={40} />
+              </FaceDot>
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-semibold text-navy">{p.fullName}</span>
                 <span className="block text-xs text-muted">{p.departmentName || ""}</span>
@@ -444,25 +483,41 @@ function Thread({
   const [localQ, setLocalQ] = useState("");
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [typingNames, setTypingNames] = useState<string[]>([]);
+  const [atBottom, setAtBottom] = useState(true);
+  const unreadCut = useRef<string | null>(null);
+  const typingPing = useRef(0);
 
   const loadChat = useCallback(async () => {
     const res = await fetch(`/api/chat/${chatId}`);
     const data = await res.json().catch(() => ({}));
-    if (res.ok) setChat(data);
-  }, [chatId]);
+    if (res.ok) {
+      setChat(data);
+      if (unreadCut.current === null && data.unreadCount > 0) {
+        const mine = (data.members || []).find((m: Person) => m.id === me.id);
+        unreadCut.current = mine?.lastReadAt || "";
+      }
+    }
+  }, [chatId, me.id]);
 
   const loadMsgs = useCallback(async () => {
     if (document.visibilityState === "hidden") return;
     const res = await fetch(`/api/chat/${chatId}/messages`);
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      const list = data.messages || [];
-      setRows(list);
+      const list: Msg[] = data.messages || [];
+      setRows((prev) => {
+        const temps = prev.filter((m) => m.id.startsWith("tmp-"));
+        return temps.length ? [...list, ...temps] : list;
+      });
       setHasMore(list.length >= 50);
     }
   }, [chatId]);
 
   useEffect(() => {
+    unreadCut.current = null;
+    setTypingNames([]);
+    setAtBottom(true);
     void loadChat();
     void loadMsgs();
     setBody(localStorage.getItem(`vd-chat-draft-${chatId}`) || "");
@@ -474,9 +529,16 @@ function Thread({
     }
     const t = setInterval(() => void loadMsgs(), 2500);
     const t2 = setInterval(() => void loadChat(), 10000);
+    const t3 = setInterval(() => {
+      void fetch(`/api/chat/${chatId}/typing`)
+        .then((r) => r.json())
+        .then((d) => setTypingNames(Array.isArray(d.names) ? d.names : []))
+        .catch(() => {});
+    }, 2000);
     return () => {
       clearInterval(t);
       clearInterval(t2);
+      clearInterval(t3);
     };
   }, [chatId, loadChat, loadMsgs]);
 
@@ -499,8 +561,8 @@ function Thread({
   }, [rows]);
 
   useEffect(() => {
-    bottom.current?.scrollIntoView({ block: "end" });
-  }, [rows.length]);
+    if (atBottom) bottom.current?.scrollIntoView({ block: "end" });
+  }, [rows.length, atBottom]);
 
   useLayoutEffect(() => {
     const el = taRef.current;
@@ -612,17 +674,50 @@ function Thread({
   }
 
   async function send(payload: { type: string; text?: string; files?: ChatPayload["files"]; voice?: ChatPayload["voice"]; blobIds?: string[] }) {
-    const res = await fetch(`/api/chat/${chatId}/messages`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...payload, replyToId: reply?.id || "", mentionIds }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || "Не отправилось");
-    setRows((prev) => [...prev, data]);
-    setReply(null);
-    setMentionIds([]);
-    onChanged();
+    const tmpId = `tmp-${Date.now()}`;
+    const textOnly = payload.type === "text" && !payload.files?.length && !payload.voice;
+    if (textOnly) {
+      setRows((prev) => [
+        ...prev,
+        {
+          id: tmpId,
+          authorId: me.id,
+          authorName: `${me.lastName} ${me.firstName}`.trim(),
+          lastName: me.lastName,
+          firstName: me.firstName,
+          photoFileId: me.photoFileId,
+          type: "text",
+          replyToId: reply?.id || "",
+          createdAt: new Date().toISOString(),
+          editedAt: null,
+          deletedAt: null,
+          payload: { v: 1, t: "text", text: payload.text || "", replyTo: reply?.id },
+          blobs: [],
+          reactions: [],
+        },
+      ]);
+      setAtBottom(true);
+    }
+    try {
+      const res = await fetch(`/api/chat/${chatId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...payload, replyToId: reply?.id || "", mentionIds }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Не отправилось");
+      setRows((prev) => {
+        const without = prev.filter((m) => m.id !== tmpId);
+        if (without.some((m) => m.id === data.id)) return without;
+        return [...without, data];
+      });
+      setReply(null);
+      setMentionIds([]);
+      onChanged();
+    } catch (e) {
+      setRows((prev) => prev.filter((m) => m.id !== tmpId));
+      throw e;
+    }
   }
 
   async function loadOlder() {
@@ -808,17 +903,21 @@ function Thread({
           </button>
         ) : (
           <button type="button" onClick={() => setInfo(true)}>
-            <Avatar photoFileId={other?.photoFileId} lastName={other?.lastName || "?"} firstName={other?.firstName || "?"} size={40} />
+            <FaceDot online={isOnline(other?.lastSeenAt)}>
+              <Avatar photoFileId={other?.photoFileId} lastName={other?.lastName || "?"} firstName={other?.firstName || "?"} size={40} />
+            </FaceDot>
           </button>
         )}
         <button type="button" className="min-w-0 flex-1 text-left" onClick={() => chat && setInfo(true)}>
           <span className="block truncate font-semibold text-navy">{headerTitle}</span>
           <span className="block truncate text-xs text-muted">
-            {chat?.adminView
-              ? "просмотр админа"
-              : chat && chat.kind !== "direct"
-                ? `${chat.members.length} чел.${chat.kind === "studio" ? " · общий чат" : chat.kind === "dept" ? " · отдел" : ""}`
-                : formatLastSeen(other?.lastSeenAt || null)}
+            {typingNames.length
+              ? `${typingNames.slice(0, 2).join(", ")}${typingNames.length > 2 ? "…" : ""} печатает…`
+              : chat?.adminView
+                ? "просмотр админа"
+                : chat && chat.kind !== "direct"
+                  ? `${chat.members.length} чел.${chat.kind === "studio" ? " · общий чат" : chat.kind === "dept" ? " · отдел" : ""}`
+                  : formatLastSeen(other?.lastSeenAt || null)}
           </span>
         </button>
         {canWrite ? (
@@ -869,9 +968,11 @@ function Thread({
       </div>
       <div
         ref={listRef}
-        className="min-h-0 flex-1 space-y-2 overflow-auto px-3 py-2"
+        className="relative min-h-0 flex-1 space-y-1 overflow-auto bg-[#efeae0] px-3 py-2"
         onScroll={(e) => {
-          if (e.currentTarget.scrollTop < 48) void loadOlder();
+          const el = e.currentTarget;
+          if (el.scrollTop < 48) void loadOlder();
+          setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 72);
         }}
       >
         {hasMore && rows.length > 0 ? (
@@ -888,14 +989,32 @@ function Thread({
           const reacts = groupedReactions(m.reactions);
           const prev = visible[i - 1];
           const showDay = !prev || dayKey(prev.createdAt) !== dayKey(m.createdAt);
+          const stacked = Boolean(prev && prev.authorId === m.authorId && !showDay && !m.deletedAt && !prev.deletedAt);
+          const cut = unreadCut.current;
+          const showUnread =
+            Boolean(cut) &&
+            !mine &&
+            new Date(m.createdAt).getTime() > new Date(cut || 0).getTime() &&
+            (!prev || new Date(prev.createdAt).getTime() <= new Date(cut || 0).getTime());
           return (
-            <div key={m.id}>
+            <div key={m.id} className={stacked ? "mt-0.5" : "mt-2"}>
             {showDay ? (
-              <p className="my-2 text-center text-[11px] font-semibold text-muted">{dayLabel(m.createdAt)}</p>
+              <p className="sticky top-0 z-10 my-2 text-center">
+                <span className="rounded-full bg-[#efeae0]/95 px-3 py-0.5 text-[11px] font-semibold text-muted backdrop-blur-sm">{dayLabel(m.createdAt)}</span>
+              </p>
             ) : null}
-            <div id={`msg-${m.id}`} className={`relative flex ${mine ? "justify-end" : "justify-start"}`}>
+            {showUnread ? (
+              <p className="my-2 flex items-center gap-2 text-center text-[11px] font-semibold text-gold">
+                <span className="h-px flex-1 bg-gold/40" />
+                непрочитанные
+                <span className="h-px flex-1 bg-gold/40" />
+              </p>
+            ) : null}
+            <div id={`msg-${m.id}`} className={`relative flex chat-rise ${mine ? "justify-end" : "justify-start"}`}>
               <div
-                className={`${p?.files?.length || p?.voice ? "w-[min(85%,20rem)]" : "max-w-[85%]"} rounded-2xl px-3 py-2 ${mine ? "bg-paper" : "border border-line bg-white"} ${flashId === m.id ? "ring-2 ring-gold" : ""}`}
+                className={`${p?.files?.length || p?.voice ? "w-[min(85%,20rem)]" : "max-w-[85%]"} px-3 py-2 ${
+                  stacked ? (mine ? "rounded-2xl rounded-tr-md" : "rounded-2xl rounded-tl-md") : "rounded-2xl"
+                } ${mine ? "bg-[#efe6d4] shadow-[inset_3px_0_0_0_#a57c3b]" : "border border-line bg-white"} ${flashId === m.id ? "ring-2 ring-gold" : ""} ${m.id.startsWith("tmp-") ? "opacity-70" : ""}`}
                 onContextMenu={(e) => {
                   if (m.deletedAt || !canWrite) return;
                   e.preventDefault();
@@ -920,7 +1039,7 @@ function Thread({
                   }
                 }}
               >
-                {!mine && chat?.kind !== "direct" ? (
+                {!mine && chat?.kind !== "direct" && !stacked ? (
                   <div className="mb-1 flex items-center gap-2 text-xs font-semibold text-navy">
                     <Avatar photoFileId={m.photoFileId} lastName={m.lastName} firstName={m.firstName} size={18} />
                     {m.authorName}
@@ -982,6 +1101,19 @@ function Thread({
         })}
         <div ref={bottom} />
       </div>
+      {!atBottom ? (
+        <button
+          type="button"
+          className="absolute bottom-28 right-4 z-10 rounded-full bg-gold p-2.5 text-white shadow-[var(--shadow)] chat-pop"
+          title="К последним"
+          onClick={() => {
+            setAtBottom(true);
+            bottom.current?.scrollIntoView({ block: "end" });
+          }}
+        >
+          <ChevronDown size={18} />
+        </button>
+      ) : null}
       {msgMenu ? (
         <div className="fixed inset-0 z-[70]" onClick={() => setMsgMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMsgMenu(null); }}>
           <div
@@ -1197,15 +1329,15 @@ function Thread({
               </ul>
             );
           })()}
-          <div className="flex items-end gap-2">
+          <div className="flex items-end gap-1.5">
             {!edit && !voiceOn ? (
-              <button type="button" className="rounded-xl p-2 hover:bg-paper" title="Голосование, сбор, задача" onClick={() => setPlusOpen(true)}>
+              <button type="button" className="rounded-full p-2 hover:bg-paper" title="Голосование, сбор, задача" onClick={() => setPlusOpen(true)}>
                 <Plus size={18} />
               </button>
             ) : null}
             {!edit && !voiceOn ? (
               <>
-                <label className="rounded-xl p-2 hover:bg-paper" title="Файл">
+                <label className="rounded-full p-2 hover:bg-paper" title="Файл">
                   <Paperclip size={18} />
                   <input
                     type="file"
@@ -1217,7 +1349,7 @@ function Thread({
                     }}
                   />
                 </label>
-                <label className="rounded-xl p-2 hover:bg-paper" title="Фото">
+                <label className="rounded-full p-2 hover:bg-paper" title="Фото">
                   <ImagePlus size={18} />
                   <input
                     type="file"
@@ -1235,7 +1367,14 @@ function Thread({
               <textarea
                 ref={taRef}
                 value={body}
-                onChange={(e) => setBody(e.target.value)}
+                onChange={(e) => {
+                  setBody(e.target.value);
+                  const now = Date.now();
+                  if (now - typingPing.current > 1800 && e.target.value.trim()) {
+                    typingPing.current = now;
+                    void fetch(`/api/chat/${chatId}/typing`, { method: "POST" }).catch(() => {});
+                  }
+                }}
                 onPaste={(e) => {
                   const files = filesFromClipboard(e.clipboardData);
                   if (!files.length) return;
@@ -1248,9 +1387,9 @@ function Thread({
                   e.preventDefault();
                   if (!busy) void sendText();
                 }}
-                placeholder={edit ? "Измените сообщение" : "Сообщение. @фамилия — тег, тогда человеку придёт пуш"}
+                placeholder={edit ? "Измените сообщение" : "Написать…"}
                 rows={1}
-                className="min-h-[44px] max-h-48 flex-1 resize-none overflow-y-auto rounded-xl border border-line bg-white px-3 py-2"
+                className="min-h-[44px] max-h-48 flex-1 resize-none overflow-y-auto rounded-2xl border border-line bg-white px-3 py-2"
               />
             )}
             {!edit ? (
@@ -1263,12 +1402,17 @@ function Thread({
               />
             ) : null}
             {edit || body.trim() || pending.length ? (
-              <button type="submit" disabled={busy} className="rounded-xl bg-navy p-2 text-white" title="Отправить">
+              <button
+                type="submit"
+                disabled={busy}
+                className="rounded-full bg-gold p-2.5 text-white transition active:scale-95 disabled:opacity-60"
+                title="Отправить"
+              >
                 <Send size={18} />
               </button>
             ) : null}
           </div>
-          <p className="mt-1 text-[11px] text-muted">Enter — отправить. Shift+Enter — новая строка. Голос — зажать микрофон.</p>
+          <p className="mt-1 text-[11px] text-muted">Enter — отправить · Shift+Enter — строка · голос — зажать микрофон</p>
         </form>
       ) : (
         <p className="border-t border-line bg-card px-3 py-3 text-sm text-muted">Просмотр. Писать может участник чата.</p>

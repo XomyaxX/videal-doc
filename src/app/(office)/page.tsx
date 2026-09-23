@@ -10,6 +10,7 @@ import { dueLabel, issuedYmd, reportDueYmd } from "@/lib/report-period";
 import { ReportFundsPicker } from "@/components/ReportFundsPicker";
 import { chatUnreadTotal } from "@/lib/chat-server";
 import { USER_SAFE_SELECT } from "@/lib/user-public";
+import { dutyForWeek } from "@/lib/duty";
 
 export default async function HomePage() {
   const user = await requireUser();
@@ -74,7 +75,7 @@ export default async function HomePage() {
   });
 
   const toReport = await prisma.fundRequest.findMany({
-    where: { authorId: user.id, status: "paid", advanceReportId: null, deletedAt: null, purchaseRequestId: null },
+    where: { authorId: user.id, status: "paid", advanceReportId: null, deletedAt: null },
     orderBy: { paidAt: "asc" },
   });
 
@@ -139,6 +140,7 @@ export default async function HomePage() {
     include: { department: true },
   });
   const birthdays = upcomingBirthdays(withBirth, 21);
+  const duty = await dutyForWeek();
 
   const now = [
     toAck.length
@@ -293,6 +295,29 @@ export default async function HomePage() {
               })),
             ]}
             empty="Нет запросов на вас."
+          />
+        </Card>
+      ) : null}
+
+      {duty.trash?.id === user.id || duty.clean.some((p) => p.id === user.id) ? (
+        <Card className="mt-4">
+          <h2 className="font-serif text-xl text-navy">Дежурство</h2>
+          <TaskList
+            items={[
+              ...(duty.trash?.id === user.id
+                ? [{ href: "/duty", title: "Вынос мусора", meta: duty.todayLabel }]
+                : []),
+              ...(duty.clean.some((p) => p.id === user.id)
+                ? [
+                    {
+                      href: "/duty",
+                      title: "Уборка",
+                      meta: duty.clean.map((p) => p.name).join(" · "),
+                    },
+                  ]
+                : []),
+            ]}
+            empty=""
           />
         </Card>
       ) : null}

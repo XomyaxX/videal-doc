@@ -48,8 +48,25 @@ export function DocActions({
     document.getElementById("doc-viewer")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  async function ensureViewed() {
+    if (viewed) return true;
+    const res = await fetch(`/api/documents/${id}/view`, { method: "POST" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Не удалось открыть");
+      return false;
+    }
+    setViewed(true);
+    return true;
+  }
+
   async function ack() {
     setBusy(true);
+    setError("");
+    if (!(await ensureViewed())) {
+      setBusy(false);
+      return;
+    }
     const res = await fetch(`/api/documents/${id}/ack`, { method: "POST" });
     const data = await res.json();
     setBusy(false);
@@ -69,6 +86,11 @@ export function DocActions({
 
   async function approve() {
     setBusy(true);
+    setError("");
+    if (!(await ensureViewed())) {
+      setBusy(false);
+      return;
+    }
     const res = await fetch(`/api/documents/${id}/approve`, { method: "POST" });
     const data = await res.json();
     setBusy(false);
@@ -100,7 +122,7 @@ export function DocActions({
   const needAction = needAck || needSign || needApprove;
   const hint = viewed
     ? "Документ открыт. Можно подтвердить."
-    : "Сначала нажмите «Открыть документ» — без просмотра подтверждение не ставится.";
+    : "Просмотрите файл слева или скачайте. «Я ознакомился» / «Согласовать» можно сразу." ;
 
   const actions = (
     <>
@@ -120,7 +142,7 @@ export function DocActions({
               ? "Документ открыт. Можно подтвердить ознакомление."
               : "На широком экране документ в окне слева. На телефоне нажмите «Открыть документ»."}
           </p>
-          <Button onClick={ack} disabled={!viewed || busy} title={!viewed ? hint : undefined}>
+          <Button onClick={() => void ack()} disabled={busy}>
             Я ознакомился
           </Button>
         </div>
@@ -145,7 +167,7 @@ export function DocActions({
           <p className="mb-2 text-sm text-muted">
             {viewed ? "Документ открыт. Можно согласовать." : hint}
           </p>
-          <Button onClick={approve} disabled={!viewed || busy} variant="gold" title={!viewed ? hint : undefined}>
+          <Button onClick={() => void approve()} disabled={busy} variant="gold">
             Согласовать
           </Button>
         </div>
@@ -172,12 +194,12 @@ export function DocActions({
         <div className="fixed inset-x-0 z-30 border-t border-line bg-card px-3 py-2 md:hidden bottom-[calc(3.5rem+env(safe-area-inset-bottom))]">
           <div className="flex flex-wrap gap-2">
             {needAck ? (
-              <Button className="flex-1" onClick={ack} disabled={!viewed || busy}>
+              <Button className="flex-1" onClick={() => void ack()} disabled={busy}>
                 Я ознакомился
               </Button>
             ) : null}
             {needApprove ? (
-              <Button className="flex-1" variant="gold" onClick={approve} disabled={!viewed || busy}>
+              <Button className="flex-1" variant="gold" onClick={() => void approve()} disabled={busy}>
                 Согласовать
               </Button>
             ) : null}

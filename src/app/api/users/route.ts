@@ -61,6 +61,12 @@ export async function POST(req: NextRequest) {
       await prisma.userSkill.createMany({ data: ids.map((skillId: string) => ({ userId: user.id, skillId })) });
     }
   }
+  if (Array.isArray(body?.extraDeptIds)) {
+    const ids = [...new Set((body.extraDeptIds as unknown[]).map((x) => String(x)).filter((id) => id && id !== user.departmentId))];
+    if (ids.length) {
+      await prisma.userDepartmentAccess.createMany({ data: ids.map((departmentId) => ({ userId: user.id, departmentId })) });
+    }
+  }
   await audit({
     userId: session.user.id,
     action: "user.create",

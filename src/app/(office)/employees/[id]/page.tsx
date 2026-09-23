@@ -32,6 +32,7 @@ export default async function EmployeePage({ params }: { params: Promise<{ id: s
       department: { select: { id: true, name: true } },
       position: { select: { id: true, name: true } },
       skills: { include: { skill: true } },
+      extraDepts: { select: { departmentId: true } },
     },
   });
   if (!person) notFound();
@@ -90,6 +91,7 @@ export default async function EmployeePage({ params }: { params: Promise<{ id: s
               body: s.body,
             }))}
             initialSkillIds={person.skills.map((x) => x.skillId)}
+            extraDeptIds={person.extraDepts.map((x) => x.departmentId)}
             initial={{
               id: person.id,
               lastName: person.lastName,

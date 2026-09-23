@@ -33,7 +33,9 @@ async function main() {
 
   const aiCodes = ["writer", "storyboard", "concept", "first_frame", "gen_video", "edit"];
   const skills = await prisma.skill.findMany({ where: { code: { in: aiCodes } } });
-  const ii = await prisma.department.findFirst({ where: { name: "ИИ", deletedAt: null } });
+  const ii =
+    (await prisma.department.findFirst({ where: { name: "Программирование", deletedAt: null } })) ||
+    (await prisma.department.findFirst({ where: { name: "ИИ", deletedAt: null } }));
   if (ii && skills.length) {
     const people = await prisma.user.findMany({ where: { departmentId: ii.id, deletedAt: null } });
     for (const u of people) {

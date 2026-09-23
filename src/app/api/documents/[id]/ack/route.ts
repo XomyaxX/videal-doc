@@ -13,12 +13,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     include: { document: true },
   });
   if (!rec) return NextResponse.json({ error: "Документ вам не назначен" }, { status: 404 });
-  if (!rec.viewedAt) return NextResponse.json({ error: "Сначала откройте файл" }, { status: 400 });
   if (rec.rejectedAt) return NextResponse.json({ error: "Вы уже отказались" }, { status: 400 });
   const ackedAt = new Date();
   await prisma.documentRecipient.update({
     where: { id: rec.id },
     data: {
+      viewedAt: rec.viewedAt || ackedAt,
       ackedAt,
       ackIp: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "",
     },

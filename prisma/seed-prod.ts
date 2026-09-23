@@ -48,7 +48,7 @@ async function main() {
     admin: await upsertDept("Администрация"),
     anim: await upsertDept("Анимация"),
     prod: await upsertDept("Производство"),
-    ii: await upsertDept("ИИ"),
+    ii: await upsertDept("Программирование"),
     aho: await upsertDept("Административно-хозяйственный отдел"),
     hr: await upsertDept("Кадры"),
     script: await upsertDept("Сценарий"),

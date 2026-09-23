@@ -44,7 +44,7 @@ export function NewTaskForm({
   const [helperId, setHelperId] = useState("");
   const [startsAt, setStartsAt] = useState("");
   const [dueAt, setDueAt] = useState("");
-  const [comment, setComment] = useState("");
+  const [brief, setBrief] = useState("");
   const [libraryIds, setLibraryIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -99,7 +99,7 @@ export function NewTaskForm({
         helperId: helperId && helperId !== assigneeId ? helperId : undefined,
         startsAt,
         dueAt,
-        comment,
+        brief,
         libraryIds,
       }),
     });
@@ -245,8 +245,13 @@ export function NewTaskForm({
           <Input type="date" value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
         </Field>
       </div>
-      <Field label="Комментарий">
-        <Textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Что сделать, референс, ограничения" />
+      <Field label="ТЗ / описание" hint="Это увидит сотрудник в карточке задачи. Чат — для уточнений, не вместо постановки.">
+        <Textarea
+          value={brief}
+          onChange={(e) => setBrief(e.target.value)}
+          className="min-h-[160px]"
+          placeholder="Что сделать, как должно выглядеть, ограничения, референсы"
+        />
       </Field>
       <Field
         label="Материалы из хранилища"

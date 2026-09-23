@@ -52,6 +52,10 @@ export function MeetForm({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [createdId, setCreatedId] = useState("");
+  const [visibility, setVisibility] = useState("participants");
+  const [dest, setDest] = useState<Set<string>>(new Set(["meeting_card", "notify_participants"]));
+  const [viewers, setViewers] = useState<Set<string>>(new Set());
+  const [recordConsent, setRecordConsent] = useState(false);
 
   const shown = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -92,6 +96,10 @@ export function MeetForm({
             startsAt: startsAt.toISOString(),
             endsAt: endsAt.toISOString(),
             participantIds: [...pick],
+            visibility,
+            viewerIds: [...viewers],
+            destinations: ["meeting_card", ...[...dest].filter((d) => d !== "meeting_card")],
+            recordConsent,
           }),
         });
         const data = await res.json().catch(() => ({}));
@@ -130,6 +138,11 @@ export function MeetForm({
               ))}
             </div>
             <Input value={place} onChange={(e) => setPlace(e.target.value)} placeholder="Или своя комната" />
+            {place === "Онлайн" || place === "Гибрид" ? (
+              <p className="mt-2 text-xs text-muted">
+                Кнопка «Войти в созвон» работает только в офисной сети. Из дома и через интернет — переговорка или отдельная ссылка, в Доке звонка не будет.
+              </p>
+            ) : null}
           </Field>
           <Field label="Начало">
             <Input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} />
@@ -226,6 +239,79 @@ export function MeetForm({
             </li>
           ))}
         </ul>
+      </Card>
+
+      <Card className="mt-4">
+        <h2 className="font-serif text-xl text-navy">Кто видит запись и сводку</h2>
+        <div className="mt-3 grid gap-2">
+          {[
+            { id: "participants", label: "Только участники", hint: "Создатель и те, кого пригласили" },
+            { id: "participants_and_managers", label: "Участники и руководство", hint: "Плюс руководители и админы" },
+            { id: "custom", label: "Только выбранные люди", hint: "Создатель и отмеченные ниже" },
+          ].map((o) => (
+            <label key={o.id} className="flex items-start gap-2 rounded-xl border border-line bg-white px-3 py-2">
+              <input type="radio" name="vis" checked={visibility === o.id} onChange={() => setVisibility(o.id)} className="mt-1" />
+              <span>
+                <span className="font-semibold text-navy">{o.label}</span>
+                <span className="mt-0.5 block text-xs text-muted">{o.hint}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+        {visibility === "custom" ? (
+          <div className="mt-3 max-h-40 overflow-auto">
+            {people
+              .filter((p) => p.id !== meId)
+              .map((p) => (
+                <label key={p.id} className="flex items-center gap-2 py-1 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={viewers.has(p.id)}
+                    onChange={() =>
+                      setViewers((prev) => {
+                        const n = new Set(prev);
+                        if (n.has(p.id)) n.delete(p.id);
+                        else n.add(p.id);
+                        return n;
+                      })
+                    }
+                  />
+                  {p.fullName}
+                </label>
+              ))}
+          </div>
+        ) : null}
+      </Card>
+
+      <Card className="mt-4">
+        <h2 className="font-serif text-xl text-navy">Куда отправить готовую сводку</h2>
+        <p className="mt-1 text-sm text-muted">После расшифровки записи. Карточка совещания всегда.</p>
+        <div className="mt-3 grid gap-2">
+          {[
+            { id: "notify_participants", label: "Уведомление участникам" },
+            { id: "attach_document", label: "Файл сводки в материалах совещания" },
+          ].map((o) => (
+            <label key={o.id} className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={dest.has(o.id)}
+                onChange={() =>
+                  setDest((prev) => {
+                    const n = new Set(prev);
+                    if (n.has(o.id)) n.delete(o.id);
+                    else n.add(o.id);
+                    return n;
+                  })
+                }
+              />
+              {o.label}
+            </label>
+          ))}
+        </div>
+        <label className="mt-4 flex items-start gap-2 text-sm">
+          <input type="checkbox" checked={recordConsent} onChange={(e) => setRecordConsent(e.target.checked)} className="mt-1" />
+          <span>Перед входом в созвон спрашивать согласие на запись</span>
+        </label>
       </Card>
 
       <Card className="mt-4">

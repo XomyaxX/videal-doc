@@ -29,7 +29,7 @@ export function QuickTask({ id, status }: { id: string; status: string }) {
         </Button>
       ) : null}
       {status === "wip" || status === "revise" ? (
-        <Button disabled={busy} variant="gold" href={`/prod/tasks/${id}`}>
+        <Button disabled={busy} variant="gold" onClick={() => act("done")}>
           Сдать
         </Button>
       ) : null}

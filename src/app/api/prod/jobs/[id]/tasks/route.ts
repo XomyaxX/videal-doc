@@ -18,7 +18,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       complexity: Number(body?.complexity) || 3,
       skillIds: Array.isArray(body?.skillIds) ? body.skillIds.map(String) : [],
       dueAt: body?.dueAt ? new Date(body.dueAt) : null,
-      comment: String(body?.comment || ""),
+      brief: String(body?.brief || body?.comment || ""),
       assigneeId: body?.assigneeId ? String(body.assigneeId) : null,
     });
     return NextResponse.json({ id: task.id });

@@ -216,16 +216,21 @@ export default async function ControlPage({
         title="Контроль"
         subtitle="Отдельные разделы: кто что делает, проверки, просрочки, табель."
         actions={
-          showWeek ? (
-            <div className="flex gap-2">
-              <Button href={hrefFor({ tab, from: addDays(from, -7), to: addDays(to, -7), q })} variant="secondary">
-                ← неделя
-              </Button>
-              <Button href={hrefFor({ tab, from: addDays(from, 7), to: addDays(to, 7), q })} variant="secondary">
-                неделя →
-              </Button>
-            </div>
-          ) : null
+          <div className="flex flex-wrap gap-2">
+            <Button href={`/api/duty/pdf?kind=journal&week=${from}`} variant="secondary">
+              Журнал PDF
+            </Button>
+            {showWeek ? (
+              <>
+                <Button href={hrefFor({ tab, from: addDays(from, -7), to: addDays(to, -7), q })} variant="secondary">
+                  ← неделя
+                </Button>
+                <Button href={hrefFor({ tab, from: addDays(from, 7), to: addDays(to, 7), q })} variant="secondary">
+                  неделя →
+                </Button>
+              </>
+            ) : null}
+          </div>
         }
       />
 

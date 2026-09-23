@@ -55,12 +55,13 @@ async function loadSkillIndex() {
   return byCode;
 }
 
-function uniqueAssignee(index: Map<string, string[]>, codes: string[]) {
+function pickAssignee(index: Map<string, string[]>, codes: string[], load: Map<string, number>) {
   const ids = new Set<string>();
   for (const c of codes) {
     for (const id of index.get(c) || []) ids.add(id);
   }
-  return ids.size === 1 ? [...ids][0] : null;
+  if (!ids.size) return null;
+  return [...ids].sort((a, b) => (load.get(a) || 0) - (load.get(b) || 0) || a.localeCompare(b))[0];
 }
 
 export async function createEpisode(opts: {
@@ -570,12 +571,21 @@ export async function spawnBreakdown(opts: {
   const skillIdByCode = new Map(skillRows.map((s) => [s.code, s.id]));
   const created: { id: string; stage: string; assigneeId: string | null }[] = [];
   const errors: string[] = [];
-  const assigned = new Map<string, number>();
+  const load = new Map<string, number>();
+  const spawned = new Map<string, number>();
+  const open = await prisma.task.groupBy({
+    by: ["assigneeId"],
+    where: { deletedAt: null, status: { in: ["todo", "wip", "revise", "blocked"] }, assigneeId: { not: null } },
+    _count: { _all: true },
+  });
+  for (const row of open) {
+    if (row.assigneeId) load.set(row.assigneeId, row._count._all);
+  }
 
   for (const item of allowed) {
     try {
       const codes = skillsForKindStage(pipelineKind, item.stage, item.assetKind);
-      const assigneeId = uniqueAssignee(skillIndex, codes);
+      const assigneeId = pickAssignee(skillIndex, codes, load);
       const skillIds = codes.map((c) => skillIdByCode.get(c)).filter((id): id is string => Boolean(id));
       const task = await createProdTask({
         user: opts.user,
@@ -586,19 +596,23 @@ export async function spawnBreakdown(opts: {
         shotId: item.shotId,
         assetId: item.assetId,
         assigneeId,
+        brief: `${item.label}. Допишите ТЗ в карточке — что сдать и на что смотреть.`,
         silent: true,
         sheetCode: "breakdown",
         skillIds,
       });
       created.push({ id: task.id, stage: task.stage, assigneeId: task.assigneeId });
-      if (assigneeId) assigned.set(assigneeId, (assigned.get(assigneeId) || 0) + 1);
+      if (assigneeId) {
+        load.set(assigneeId, (load.get(assigneeId) || 0) + 1);
+        spawned.set(assigneeId, (spawned.get(assigneeId) || 0) + 1);
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "ошибка";
       if (!msg.includes("уже есть")) errors.push(`${item.label}: ${msg}`);
     }
   }
 
-  for (const [userId, n] of assigned) {
+  for (const [userId, n] of spawned) {
     if (userId === opts.user.id) continue;
     await notify({
       userId,
@@ -614,7 +628,7 @@ export async function spawnBreakdown(opts: {
     skipped: plan.length - created.length,
     skippedLead,
     errors: errors.slice(0, 8),
-    assigned: assigned.size,
+    assigned: spawned.size,
   };
 }
 

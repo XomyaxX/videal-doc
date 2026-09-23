@@ -14,9 +14,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   });
   if (!rec || !rec.isApprover) return NextResponse.json({ error: "Вы не согласующий" }, { status: 403 });
   if (rec.rejectedAt) return NextResponse.json({ error: "Уже отказ" }, { status: 400 });
+  const now = new Date();
   await prisma.documentRecipient.update({
     where: { id: rec.id },
-    data: { approvedAt: new Date() },
+    data: { viewedAt: rec.viewedAt || now, approvedAt: now },
   });
   const left = await prisma.documentRecipient.count({
     where: { documentId: id, isApprover: true, approvedAt: null, rejectedAt: null },

@@ -21,7 +21,9 @@ const BY_LOGIN: Record<string, "m" | "f"> = {
   belyaeva: "f",
   chetverikova: "f",
   zimareva: "f",
+  matveeva: "f",
   "girsov.va": "m",
+  lugin: "m",
   kozlov: "m",
   laptev: "m",
   khozyainov: "m",
@@ -54,6 +56,7 @@ const WOMEN = new Set([
   "александра",
   "татьяна",
   "светлана",
+  "марина",
 ]);
 
 const MEN = new Set([

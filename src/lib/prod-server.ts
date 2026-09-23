@@ -6,6 +6,7 @@ import {
   ANIM_STAGES,
   APPROVE_DENIED,
   MODEL_STAGES,
+  PREPROD_STAGES,
   STAGE_COMPLEXITY,
   STAGE_LABEL,
   WORK_STATUSES,
@@ -13,6 +14,7 @@ import {
   canLeadProd,
   canManageProd,
   canSeeProdTask,
+  userDeptNames,
   canWorkTask,
   isFullProdLead,
   scorePoints,
@@ -26,7 +28,11 @@ import { assertInside } from "./files";
 import type { SessionUser } from "./types";
 import type { Prisma } from "@prisma/client";
 import { currentEpisodeId, taskScopeKey } from "./current-episode";
-import { AI_WORK_STAGES, skillsForKindStage, userPipelineKinds } from "./prod-kinds";
+
+export function clipBrief(raw: unknown, max = 8000) {
+  return String(raw || "").trim().slice(0, max);
+}
+import { AI_WORK_STAGES, isProgrammingDept, skillsForKindStage, userPipelineKinds } from "./prod-kinds";
 import { USER_SAFE_ORG_SELECT } from "./user-public";
 
 export const ASSIGNED_BY_SELECT = {
@@ -77,19 +83,23 @@ export function taskListWhere(
   if (scope === "all" || canManageProd(user) || user.prodScope === "studio") {
     return work;
   }
-  const stages =
-    user.departmentName === "ИИ"
-      ? [...AI_WORK_STAGES]
-      : user.departmentName === "Производство"
-        ? [...MODEL_STAGES]
-        : [...ANIM_STAGES];
+  const names = userDeptNames(user);
+  const stages = new Set<string>();
+  if (names.some((n) => isProgrammingDept(n))) AI_WORK_STAGES.forEach((s) => stages.add(s));
+  if (names.includes("Производство")) MODEL_STAGES.forEach((s) => stages.add(s));
+  if (names.includes("Анимация")) ANIM_STAGES.forEach((s) => stages.add(s));
+  if (names.includes("Сценарий") || names.includes("Анимация") || names.includes("Производство")) {
+    PREPROD_STAGES.forEach((s) => stages.add(s));
+  }
+  if (!stages.size) ANIM_STAGES.forEach((s) => stages.add(s));
   const kinds = userPipelineKinds(user);
+  const deptIds = [user.departmentId, ...(user.extraDeptIds || [])].filter(Boolean) as string[];
   return {
     ...work,
-    stage: { in: stages },
+    stage: { in: [...stages] },
     OR: [
       ...mine,
-      { assignee: { departmentId: user.departmentId } },
+      { assignee: { departmentId: { in: deptIds } } },
       { assigneeId: null, episode: { show: { pipelineKind: { in: kinds } } } },
     ],
   };
@@ -112,6 +122,7 @@ export async function createProdTask(opts: {
   startsAt?: Date | null;
   dueAt?: Date | null;
   comment?: string;
+  brief?: string;
   complexity?: number;
   silent?: boolean;
   sheetCode?: string;
@@ -308,7 +319,8 @@ export async function createProdTask(opts: {
       title: (opts.title || "").trim(),
       status: "todo",
       complexity: opts.complexity || STAGE_COMPLEXITY[opts.stage] || 3,
-      comment: opts.comment || "",
+      comment: "",
+      brief: clipBrief(opts.brief || opts.comment),
       episodeId,
       sceneId,
       shotId,
@@ -340,7 +352,7 @@ export async function createProdTask(opts: {
       await notify({
         userId,
         title: userId === task.helperId && userId !== opts.assigneeId ? "Вас поставили суб-исполнителем" : "Вам назначили задачу",
-        body: `${STAGE_LABEL[opts.stage]}`,
+        body: clipBrief(opts.brief || opts.comment).slice(0, 160) || STAGE_LABEL[opts.stage],
         link: `/prod/tasks/${task.id}`,
         urgency: "normal",
       });
@@ -411,6 +423,74 @@ export function assertLead(
   if (!canLeadProd(user, stage, assigneeDept)) throw new Error("Нет права руководителя");
 }
 
+export async function setTaskAssignees(opts: {
+  user: SessionUser;
+  taskId: string;
+  assigneeId: string | null;
+  helperId: string | null;
+}) {
+  const task = await prisma.task.findUnique({
+    where: { id: opts.taskId },
+    include: {
+      assignee: { include: { department: true } },
+      assignedBy: { select: ASSIGNED_BY_SELECT },
+    },
+  });
+  if (!task) throw new Error("Задача не найдена");
+  if (task.deletedAt) throw new Error("Задача удалена — сначала восстановите");
+  const lead = canLeadProd(opts.user, task.stage, task.assignee?.department?.name);
+  if (!lead) throw new Error("Назначать может только руководитель");
+  let assigneeId = opts.assigneeId;
+  let helperId = opts.helperId && opts.helperId !== assigneeId ? opts.helperId : null;
+  if (assigneeId) {
+    const person = await prisma.user.findFirst({
+      where: { id: assigneeId, deletedAt: null, status: "active" },
+      select: { id: true },
+    });
+    if (!person) throw new Error("Нет такого сотрудника");
+  } else {
+    helperId = null;
+  }
+  const data: {
+    assigneeId: string | null;
+    helperId: string | null;
+    assigneeLocked: boolean;
+    assignedById?: string | null;
+  } = {
+    assigneeId,
+    helperId,
+    assigneeLocked: Boolean(assigneeId),
+  };
+  if (assigneeId) {
+    if (isFullProdLead(opts.user)) data.assignedById = opts.user.id;
+    else if (!task.assignedBy || !isFullProdLead(task.assignedBy)) data.assignedById = opts.user.id;
+  }
+  await prisma.task.update({ where: { id: task.id }, data });
+  await prisma.taskEvent.create({
+    data: {
+      taskId: task.id,
+      userId: opts.user.id,
+      action: "assign",
+      body: assigneeId ? "назначили исполнителя" : "сняли исполнителя",
+    },
+  });
+  const crew = new Set(
+    [task.assigneeId, task.helperId, assigneeId, helperId].filter(
+      (id): id is string => Boolean(id) && id !== opts.user.id,
+    ),
+  );
+  for (const userId of crew) {
+    const helperOnly = userId === helperId && userId !== assigneeId;
+    await notify({
+      userId,
+      title: helperOnly ? "Вас поставили суб-исполнителем" : assigneeId === userId ? "Вам назначили задачу" : "Сняли с задачи",
+      body: "",
+      link: `/prod/tasks/${task.id}`,
+      urgency: "normal",
+    });
+  }
+}
+
 const STATUS_SAFE: Record<string, string> = {
   wip: "взяли в работу",
   done: "сдали на проверку",
@@ -458,16 +538,8 @@ export async function applyStatus(opts: {
   ) {
     throw new Error(APPROVE_DENIED);
   }
-  if (opts.status === "done" && task.kind !== "job") {
-    const files = await prisma.taskFile.count({ where: { taskId: task.id } });
-    if (files === 0 && !(opts.comment || "").trim()) {
-      throw new Error("При сдаче нужен плейбласт или путь к файлу на шаре в комментарии");
-    }
-  }
-
   const next: {
     status: string;
-    comment: string;
     blockedReason: string;
     assigneeId: string | null;
     helperId?: string | null;
@@ -476,7 +548,6 @@ export async function applyStatus(opts: {
     startsAt?: Date;
   } = {
     status: opts.status,
-    comment: opts.comment ?? task.comment,
     blockedReason: opts.blockedReason ?? task.blockedReason,
     assigneeId: opts.assigneeId === undefined ? task.assigneeId : opts.assigneeId,
     helperId: opts.helperId === undefined ? task.helperId : opts.helperId,
@@ -692,6 +763,35 @@ export async function restoreProdTask(opts: { user: SessionUser; taskId: string 
       });
     }
   }
+}
+
+export async function setTaskBrief(opts: { user: SessionUser; taskId: string; brief: string }) {
+  const text = clipBrief(opts.brief);
+  const task = await prisma.task.findUnique({
+    where: { id: opts.taskId },
+    include: { assignee: { include: { department: true } } },
+  });
+  if (!task) throw new Error("Нет задачи");
+  if (task.deletedAt) throw new Error("Задача удалена — сначала восстановите");
+  const lead = canLeadProd(opts.user, task.stage, task.assignee?.department?.name);
+  if (!lead) throw new Error("ТЗ пишет руководитель");
+  if (task.brief === text) return task;
+  await prisma.task.update({ where: { id: task.id }, data: { brief: text } });
+  await prisma.taskEvent.create({
+    data: { taskId: task.id, userId: opts.user.id, action: "brief", body: text ? text.slice(0, 400) : "очистили ТЗ" },
+  });
+  for (const userId of [task.assigneeId, task.helperId]) {
+    if (userId && userId !== opts.user.id) {
+      await notify({
+        userId,
+        title: text ? "Обновили ТЗ" : "Убрали ТЗ",
+        body: text ? text.slice(0, 160) : task.title || "задача",
+        link: `/prod/tasks/${task.id}`,
+        urgency: "normal",
+      });
+    }
+  }
+  return prisma.task.findUniqueOrThrow({ where: { id: task.id } });
 }
 
 export async function addTaskComment(opts: { user: SessionUser; taskId: string; body: string }) {

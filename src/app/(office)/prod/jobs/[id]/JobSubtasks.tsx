@@ -20,7 +20,7 @@ export function JobSubtasks({
   const [title, setTitle] = useState("");
   const [complexity, setComplexity] = useState(3);
   const [dueAt, setDueAt] = useState("");
-  const [comment, setComment] = useState("");
+  const [brief, setBrief] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
   const [skillIds, setSkillIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -38,7 +38,7 @@ export function JobSubtasks({
     const res = await fetch(`/api/prod/jobs/${jobId}/tasks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, complexity, skillIds, dueAt: dueAt || null, comment, assigneeId }),
+      body: JSON.stringify({ title, complexity, skillIds, dueAt: dueAt || null, brief, assigneeId }),
     });
     const data = await res.json().catch(() => ({}));
     setBusy(false);
@@ -124,8 +124,13 @@ export function JobSubtasks({
         <Field label="Срок">
           <Input type="date" value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
         </Field>
-        <Field label="Комментарий">
-          <Textarea value={comment} onChange={(e) => setComment(e.target.value)} />
+        <Field label="ТЗ / описание">
+          <Textarea
+            value={brief}
+            onChange={(e) => setBrief(e.target.value)}
+            className="min-h-[120px]"
+            placeholder="Что сделать в этой подзадаче"
+          />
         </Field>
         <Button type="submit" variant="secondary" disabled={busy}>
           Добавить подзадачу

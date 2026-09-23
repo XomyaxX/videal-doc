@@ -94,7 +94,9 @@ function toUser(row: {
   role: { id: string; code: string; name: string; permissions: string };
   department: { name: string } | null;
   position: { name: string } | null;
+  extraDepts?: { departmentId: string; department: { name: string } }[];
 }): SessionUser {
+  const extra = row.extraDepts || [];
   return {
     id: row.id,
     login: row.login,
@@ -114,6 +116,8 @@ function toUser(row: {
     photoFileId: row.photoFileId,
     departmentId: row.departmentId,
     departmentName: row.department?.name ?? null,
+    extraDeptIds: extra.map((x) => x.departmentId),
+    extraDeptNames: extra.map((x) => x.department.name),
     positionId: row.positionId,
     positionName: row.position?.name ?? null,
     status: row.status,
@@ -129,7 +133,7 @@ export async function getSession(): Promise<{ token: string; user: SessionUser }
     where: { token },
     include: {
       user: {
-        include: { role: true, department: true, position: true },
+        include: { role: true, department: true, position: true, extraDepts: { include: { department: true } } },
       },
     },
   });
@@ -221,7 +225,7 @@ export async function loginWithPassword(
 ) {
   const user = await prisma.user.findFirst({
     where: { login: login.trim(), deletedAt: null },
-    include: { role: true, department: true, position: true },
+    include: { role: true, department: true, position: true, extraDepts: { include: { department: true } } },
   });
   if (!user || user.status !== "active") return { error: "Неверный логин или пароль" as const };
   if (!verifyPassword(password, user.passwordHash)) return { error: "Неверный логин или пароль" as const };

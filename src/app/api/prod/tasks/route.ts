@@ -60,7 +60,8 @@ export async function POST(req: NextRequest) {
       helperId: body?.helperId || null,
       startsAt: parseDay(body?.startsAt),
       dueAt: parseDay(body?.dueAt),
-      comment: body?.comment || "",
+      comment: "",
+      brief: String(body?.brief || body?.comment || ""),
       complexity: body?.complexity ? Number(body.complexity) : undefined,
     });
     const libraryIds = Array.isArray(body?.libraryIds) ? body.libraryIds.map(String) : [];

@@ -2,6 +2,13 @@ import { skillsForE02Stage } from "./pipeline";
 
 export type PipelineKind = "e02" | "ai";
 
+/** Отдел ИИ-пайплайна. Старое имя «ИИ» ещё принимаем, чтобы не сломать сессии. */
+export const DEPT_PROGRAMMING = "Программирование";
+
+export function isProgrammingDept(name?: string | null) {
+  return name === DEPT_PROGRAMMING || name === "ИИ";
+}
+
 export type KindSpec = {
   kind: PipelineKind;
   label: string;
@@ -33,7 +40,7 @@ export const KIND_SPECS: Record<PipelineKind, KindSpec> = {
   ai: {
     kind: "ai",
     label: "ИИ-мультфильм",
-    deptNames: ["ИИ"],
+    deptNames: [DEPT_PROGRAMMING],
     episodeStages: ["script", "storyboard", "concept", "edit"],
     sceneStages: [],
     shotStages: ["first_frame", "gen_video"],
@@ -53,15 +60,17 @@ export const AI_WORK_STAGES = ["script", "storyboard", "concept", "edit", "first
 export function userPipelineKinds(user: {
   prodScope: string;
   departmentName: string | null;
+  extraDeptNames?: string[];
   roleCode: string;
   permissions?: string[];
 }): PipelineKind[] {
   if (user.prodScope === "studio" || user.roleCode === "superadmin") return ["e02", "ai"];
   if (user.permissions?.includes("prod.manage")) return ["e02", "ai"];
-  const dept = user.departmentName || "";
-  if (dept === "ИИ") return ["ai"];
-  if (dept === "Анимация" || dept === "Производство" || dept === "Сценарий") return ["e02"];
-  return [];
+  const names = [user.departmentName, ...(user.extraDeptNames || [])].filter(Boolean) as string[];
+  const out: PipelineKind[] = [];
+  if (names.some((n) => isProgrammingDept(n))) out.push("ai");
+  if (names.some((n) => n === "Анимация" || n === "Производство" || n === "Сценарий")) out.push("e02");
+  return out;
 }
 
 export function canSeePipelineKind(

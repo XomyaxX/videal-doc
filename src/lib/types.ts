@@ -19,6 +19,8 @@ export type SessionUser = {
   photoFileId: string;
   departmentId: string | null;
   departmentName: string | null;
+  extraDeptIds: string[];
+  extraDeptNames: string[];
   positionId: string | null;
   positionName: string | null;
   status: string;

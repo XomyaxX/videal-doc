@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { userCan } from "@/lib/types";
-import { applyStatus, setTaskDiskDir, taskInclude } from "@/lib/prod-server";
+import { applyStatus, setTaskAssignees, setTaskBrief, setTaskDiskDir, taskInclude } from "@/lib/prod-server";
 import { PROD_STATUSES, canLeadProd, canSeeProdTask, type ProdStatus } from "@/lib/prod";
 import { USER_SAFE_SELECT } from "@/lib/user-public";
 
@@ -38,7 +38,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const hasStatus = PROD_STATUSES.includes(status as ProdStatus);
   const hasDisk = body?.diskDir !== undefined && body?.diskDir !== null;
   const hasTitle = typeof body?.title === "string";
-  if (!hasStatus && !hasDisk && !hasTitle) {
+  const hasBrief = typeof body?.brief === "string";
+  const hasAssign = body?.assigneeId !== undefined || body?.helperId !== undefined;
+  if (!hasStatus && !hasDisk && !hasTitle && !hasBrief && !hasAssign) {
     return NextResponse.json({ error: "Неизвестный статус" }, { status: 400 });
   }
   try {
@@ -65,8 +67,19 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         data: { taskId: id, userId: session.user.id, action: "rename", body: title || "сбросили название" },
       });
     }
+    if (hasBrief) {
+      await setTaskBrief({ user: session.user, taskId: id, brief: String(body.brief) });
+    }
     if (hasDisk) {
       await setTaskDiskDir({ user: session.user, taskId: id, input: String(body.diskDir) });
+    }
+    if (hasAssign && !hasStatus) {
+      await setTaskAssignees({
+        user: session.user,
+        taskId: id,
+        assigneeId: body?.assigneeId ? String(body.assigneeId) : null,
+        helperId: body?.helperId ? String(body.helperId) : null,
+      });
     }
     if (hasStatus) {
       await applyStatus({
@@ -74,8 +87,6 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         taskId: id,
         status: status as ProdStatus,
         comment: body?.comment ? String(body.comment) : undefined,
-        assigneeId: body?.assigneeId === undefined ? undefined : body.assigneeId || null,
-        helperId: body?.helperId === undefined ? undefined : body.helperId || null,
         blockedReason: body?.blockedReason ? String(body.blockedReason) : undefined,
       });
     }

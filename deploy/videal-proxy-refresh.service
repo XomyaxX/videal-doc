@@ -1,0 +1,7 @@
+[Unit]
+Description=Refresh HexVPN node list via proxy
+After=videal-proxy.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /etc/videal-proxy/refresh-hex-proxy.py

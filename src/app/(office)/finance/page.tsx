@@ -12,12 +12,12 @@ export default async function FinancePage() {
   const user = await requirePermission("finance.create");
   const templates = await prisma.documentTemplate.findMany({ orderBy: { name: "asc" } });
   const mineOpen = await prisma.fundRequest.findMany({
-    where: { authorId: user.id, status: "paid", advanceReportId: null, deletedAt: null, purchaseRequestId: null },
+    where: { authorId: user.id, status: "paid", advanceReportId: null, deletedAt: null },
     orderBy: { paidAt: "asc" },
   });
   const allOpen = ["accountant", "admin", "superadmin"].includes(user.roleCode)
     ? await prisma.fundRequest.findMany({
-        where: { status: "paid", advanceReportId: null, deletedAt: null, purchaseRequestId: null },
+        where: { status: "paid", advanceReportId: null, deletedAt: null },
         include: { author: { select: USER_SAFE_SELECT } },
         orderBy: { paidAt: "asc" },
       })

@@ -47,12 +47,13 @@ model Role {
 }
 
 model Department {
-  id        String    @id @default(cuid())
-  name      String
-  deletedAt DateTime?
-  users     User[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id         String                  @id @default(cuid())
+  name       String
+  deletedAt  DateTime?
+  users      User[]
+  extraUsers UserDepartmentAccess[]
+  createdAt  DateTime                @default(now())
+  updatedAt  DateTime                @updatedAt
 }
 
 model Position {
@@ -95,6 +96,7 @@ model User {
   role         Role        @relation(fields: [roleId], references: [id])
   departmentId String?
   department   Department? @relation(fields: [departmentId], references: [id])
+  extraDepts   UserDepartmentAccess[]
   positionId   String?
   position     Position?   @relation(fields: [positionId], references: [id])
   managerId    String?
@@ -143,6 +145,8 @@ model User {
   attendanceFlags   AttendanceFlag[]
   officeStations    OfficeStation[]
   inventory         InventoryItem[]
+  clearanceSheets   ClearanceSheet[] @relation("ClearanceSubject")
+  clearanceAuthored ClearanceSheet[] @relation("ClearanceAuthor")
   chatIdentity      ChatIdentity?
   chatMembers       ChatMember[]
   chatMessages      ChatMessage[]
@@ -160,6 +164,8 @@ model User {
   meetingsAuthored  Meeting[]              @relation("MeetingAuthor")
   meetingParts      MeetingParticipant[]
   meetingPeers      MeetingPeer[]
+  meetingViewers    MeetingViewer[]
+  meetingChats      MeetingChatMessage[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -337,6 +343,39 @@ model InventoryItem {
 
   @@index([userId])
   @@index([invNo])
+}
+
+model ClearanceSheet {
+  id        String          @id @default(cuid())
+  number    String
+  userId    String
+  user      User            @relation("ClearanceSubject", fields: [userId], references: [id])
+  authorId  String
+  author    User            @relation("ClearanceAuthor", fields: [authorId], references: [id])
+  reason    String          @default("dismissal")
+  note      String          @default("")
+  printJson String          @default("")
+  status    String          @default("open")
+  closedAt  DateTime?
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  lines     ClearanceLine[]
+
+  @@index([userId])
+  @@index([status])
+}
+
+model ClearanceLine {
+  id              String         @id @default(cuid())
+  sheetId         String
+  sheet           ClearanceSheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  inventoryItemId String         @default("")
+  title           String
+  invNo           String         @default("")
+  qty             Int            @default(1)
+  returned        Boolean        @default(false)
+  note            String         @default("")
+  sortOrder       Int            @default(0)
 }
 
 model StoredFile {
@@ -530,26 +569,85 @@ model CalendarParticipant {
 }
 
 model Meeting {
-  id              String   @id @default(cuid())
-  title           String
-  body            String   @default("")
-  place           String   @default("")
-  startsAt        DateTime
-  endsAt          DateTime
-  status          String   @default("scheduled")
-  authorId        String
-  author          User     @relation("MeetingAuthor", fields: [authorId], references: [id])
-  calendarEventId String   @default("")
-  deletedAt       DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  participants    MeetingParticipant[]
-  files           MeetingFile[]
-  peers           MeetingPeer[]
-  signals         MeetingSignal[]
+  id                 String    @id @default(cuid())
+  title              String
+  body               String    @default("")
+  place              String    @default("")
+  startsAt           DateTime
+  endsAt             DateTime
+  endedAt            DateTime?
+  status             String    @default("scheduled")
+  authorId           String
+  author             User      @relation("MeetingAuthor", fields: [authorId], references: [id])
+  calendarEventId    String    @default("")
+  recordConsent      Boolean   @default(false)
+  guestEnabled       Boolean   @default(false)
+  guestToken         String    @default("")
+  visibility         String    @default("participants")
+  destinations       String    @default("[\"meeting_card\",\"notify_participants\"]")
+  recordingFileId    String    @default("")
+  recordingStereo    Boolean   @default(false)
+  speakerLeft        String    @default("Организатор")
+  speakerRight       String    @default("Участники")
+  recordingTracks    String    @default("")
+  summaryStatus      String    @default("none")
+  summaryProgress    Int       @default(0)
+  transcript         String    @default("")
+  summaryJson        String    @default("")
+  summaryMarkdown    String    @default("")
+  summaryError       String    @default("")
+  summaryDeliveredAt DateTime?
+  summaryDelivered   String    @default("")
+  summaryTaskIds     String    @default("")
+  deletedAt          DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  participants       MeetingParticipant[]
+  files              MeetingFile[]
+  peers              MeetingPeer[]
+  signals            MeetingSignal[]
+  viewers            MeetingViewer[]
+  chat               MeetingChatMessage[]
+  guests             MeetingGuest[]
 
   @@index([startsAt])
   @@index([status])
+  @@index([guestToken])
+}
+
+model MeetingGuest {
+  id        String   @id @default(cuid())
+  meetingId String
+  meeting   Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  name      String
+  cookie    String   @unique
+  createdAt DateTime @default(now())
+  peers     MeetingPeer[]
+  chat      MeetingChatMessage[]
+}
+
+model MeetingViewer {
+  id        String  @id @default(cuid())
+  meetingId String
+  meeting   Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, userId])
+}
+
+model MeetingChatMessage {
+  id        String        @id @default(cuid())
+  meetingId String
+  meeting   Meeting       @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  authorId  String?
+  author    User?         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  guestId   String?
+  guest     MeetingGuest? @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  body      String
+  createdAt DateTime      @default(now())
+
+  @@index([meetingId, createdAt])
 }
 
 model MeetingParticipant {
@@ -574,19 +672,22 @@ model MeetingFile {
 }
 
 model MeetingPeer {
-  id        String    @id @default(cuid())
+  id        String        @id @default(cuid())
   meetingId String
-  meeting   Meeting   @relation(fields: [meetingId], references: [id], onDelete: Cascade)
-  userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  audioOn   Boolean   @default(true)
-  videoOn   Boolean   @default(true)
-  screenOn  Boolean   @default(false)
-  joinedAt  DateTime  @default(now())
+  meeting   Meeting       @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  guestId   String?
+  guest     MeetingGuest? @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  audioOn   Boolean       @default(true)
+  videoOn   Boolean       @default(true)
+  screenOn  Boolean       @default(false)
+  joinedAt  DateTime      @default(now())
   leftAt    DateTime?
-  updatedAt DateTime  @updatedAt
+  updatedAt DateTime      @updatedAt
 
-  @@unique([meetingId, userId])
+  @@index([meetingId, userId])
+  @@index([meetingId, guestId])
 }
 
 model MeetingSignal {
@@ -724,6 +825,15 @@ model Skill {
   createdAt   DateTime    @default(now())
 }
 
+model UserDepartmentAccess {
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  @@id([userId, departmentId])
+}
+
 model UserSkill {
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -792,6 +902,7 @@ model AppSettings {
   imapFolder   String  @default("INBOX")
   lastRemindAt    DateTime?
   lastBirthdayYmd String    @default("")
+  lastDutyYmd     String    @default("")
   prodDatesNeedApproval Boolean @default(false)
   currentEpisodeId String   @default("")
   officeCidrs      String   @default("")
@@ -889,6 +1000,7 @@ model Task {
   startsAt       DateTime?
   dueAt          DateTime?
   comment        String    @default("")
+  brief          String    @default("")
   blockedReason  String    @default("")
   diskDir        String    @default("")
   sheetCode      String    @default("")

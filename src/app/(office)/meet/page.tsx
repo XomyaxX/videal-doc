@@ -2,22 +2,20 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Button, Card, PageHeader, Pill } from "@/components/ui";
-import { canCreateMeet, serializeMeet } from "@/lib/meet";
+import { canCreateMeet, meetListWhere, serializeMeet } from "@/lib/meet";
 import { fmtDateTime } from "@/lib/dates";
 
 export default async function MeetListPage() {
   const user = await requireUser();
   const rows = await prisma.meeting.findMany({
-    where: {
-      deletedAt: null,
-      OR: [{ authorId: user.id }, { participants: { some: { userId: user.id } } }],
-    },
+    where: meetListWhere(user),
     include: {
       author: { select: { id: true, lastName: true, firstName: true, middleName: true, photoFileId: true } },
       participants: {
         include: { user: { select: { id: true, lastName: true, firstName: true, middleName: true, photoFileId: true } } },
       },
       files: true,
+      viewers: { select: { userId: true } },
     },
     orderBy: { startsAt: "asc" },
     take: 80,
@@ -51,8 +49,20 @@ export default async function MeetListPage() {
                     {fmtDateTime(m.startsAt)} · {m.place || "место не указано"} · {m.participants.length} чел.
                   </span>
                 </span>
-                <Pill tone={m.status === "live" ? "wait" : "navy"}>
-                  {m.status === "live" ? "Идёт" : m.status === "cancelled" ? "Отмена" : m.canJoin ? "Войти" : "Открыть"}
+                <Pill tone={m.status === "live" ? "wait" : m.summaryStatus === "ready" ? "ok" : "navy"}>
+                  {m.status === "live"
+                    ? "Идёт созвон"
+                    : m.status === "cancelled"
+                      ? "Отмена"
+                      : m.summaryStatus === "ready"
+                        ? "Сводка готова"
+                        : m.summaryStatus && m.summaryStatus !== "none"
+                          ? "Запись обрабатывается"
+                          : m.canJoin
+                            ? "Войти"
+                            : m.status === "done"
+                              ? "Завершено"
+                              : "Открыть"}
                 </Pill>
               </Link>
             </li>
@@ -66,7 +76,7 @@ export default async function MeetListPage() {
     <div>
       <PageHeader
         title="Совещания"
-        subtitle="Созыв: тема, кто должен быть, место и материалы. Созвон — в офисной сети."
+        subtitle="Созыв, созвон, чат комнаты и сводка. Видны только те совещания, к которым у вас доступ."
         actions={canCreate ? <Button href="/meet/new">Созвать</Button> : null}
       />
       {!list.length ? (

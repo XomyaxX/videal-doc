@@ -21,7 +21,7 @@ const nextConfig = {
           { key: "X-Frame-Options", value: "SAMEORIGIN" },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "same-origin" },
-          { key: "Permissions-Policy", value: "camera=(self), microphone=(self), geolocation=()" },
+          { key: "Permissions-Policy", value: "camera=(self), microphone=(self), display-capture=(self), geolocation=()" },
           {
             key: "Content-Security-Policy",
             value: [
@@ -31,7 +31,7 @@ const nextConfig = {
               "img-src 'self' data: blob:",
               "media-src 'self' blob:",
               "font-src 'self'",
-              "connect-src 'self' https://*.push.apple.com https://fcm.googleapis.com https://updates.push.services.mozilla.com",
+              "connect-src 'self' https://*.push.apple.com https://fcm.googleapis.com https://updates.push.services.mozilla.com stun:stun.l.google.com:19302",
               "worker-src 'self' blob:",
               "frame-src 'self'",
               "frame-ancestors 'self'",

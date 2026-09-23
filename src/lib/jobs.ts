@@ -120,7 +120,7 @@ export async function createJob(opts: {
   return prisma.job.create({
     data: {
       title: title.slice(0, 200),
-      description: opts.description.trim().slice(0, 4000),
+      description: opts.description.trim().slice(0, 8000),
       episodeId: opts.episodeId || null,
       startsAt: opts.startsAt || officeTodayNoon(),
       dueAt: opts.dueAt || null,
@@ -161,6 +161,7 @@ export async function createJobTask(opts: {
   skillIds: string[];
   dueAt?: Date | null;
   comment?: string;
+  brief?: string;
   assigneeId?: string | null;
 }) {
   if (!canLeadProd(opts.user)) throw new Error("Нет права руководителя");
@@ -188,7 +189,8 @@ export async function createJobTask(opts: {
       status: "todo",
       title: title.slice(0, 200),
       complexity,
-      comment: (opts.comment || "").slice(0, 2000),
+      comment: "",
+      brief: (opts.brief || opts.comment || "").trim().slice(0, 8000),
       jobId: job.id,
       startsAt: officeTodayNoon(),
       dueAt: opts.dueAt || job.dueAt,
@@ -219,7 +221,7 @@ export async function createJobTask(opts: {
       await notify({
         userId: assigneeId,
         title: "Новая подзадача",
-        body: title.slice(0, 200),
+        body: (opts.brief || opts.comment || title).trim().slice(0, 160),
         link: `/prod/tasks/${task.id}`,
         urgency: "normal",
       });

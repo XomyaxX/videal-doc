@@ -52,6 +52,8 @@ deploy/fix-blender-numpy.sh
 deploy/install-blender42.sh
 deploy/*.py
 prisma/add-babkina.ts
+prisma/add-urokpaev.ts
+prisma/add-matveeva-lugin.ts
 prisma/upsert-sublead.ts
 
 # vercel
@@ -60,3 +62,5 @@ prisma/upsert-sublead.ts
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+docs/videal-edo-справка.md
