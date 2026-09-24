@@ -5,6 +5,7 @@ import { shortNamePlain } from "@/lib/names";
 import { orgLetterhead, orgNameShort } from "@/lib/org";
 import { dueDateParts, issuedYmd, reportDueYmd } from "@/lib/report-period";
 import { formatMoney } from "@/lib/money";
+import { USER_SAFE_ORG_SELECT, USER_SAFE_SELECT } from "@/lib/user-public";
 
 function shortFromPayee(payee: string) {
   const parts = payee.trim().split(/\s+/);
@@ -19,11 +20,11 @@ export async function buildFundPdfById(id: string): Promise<{ buffer: Buffer; nu
   const row = await prisma.fundRequest.findFirst({
     where: { id, deletedAt: null },
     include: {
-      author: { include: { position: true, department: true } },
-      manager: true,
-      accountant: true,
+      author: { select: USER_SAFE_ORG_SELECT },
+      manager: { select: USER_SAFE_SELECT },
+      accountant: { select: USER_SAFE_SELECT },
       purchaseRequest: {
-        include: { ahoUser: { include: { position: true, department: true } } },
+        include: { ahoUser: { select: USER_SAFE_ORG_SELECT } },
       },
     },
   });

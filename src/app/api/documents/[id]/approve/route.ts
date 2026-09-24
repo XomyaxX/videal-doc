@@ -19,12 +19,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     where: { id: rec.id },
     data: { viewedAt: rec.viewedAt || now, approvedAt: now },
   });
-  const left = await prisma.documentRecipient.count({
+  const pending = await prisma.documentRecipient.count({
     where: { documentId: id, isApprover: true, approvedAt: null, rejectedAt: null },
   });
+  const rejected = await prisma.documentRecipient.count({
+    where: { documentId: id, isApprover: true, rejectedAt: { not: null } },
+  });
+  const title =
+    pending === 0 && rejected === 0
+      ? "Документ согласован всеми"
+      : pending === 0
+        ? "Согласование завершено (есть отказ)"
+        : "Документ согласован";
   await notify({
     userId: rec.document.authorId,
-    title: left === 0 ? "Документ согласован всеми" : "Документ согласован",
+    title,
     body: `${session.user.fullName}: ${rec.document.title}`,
     link: `/documents/${id}`,
     urgency: "normal",

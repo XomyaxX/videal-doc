@@ -105,6 +105,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   if (!aho) return NextResponse.json({ error: "Нет права АХО" }, { status: 403 });
 
   if (action === "take") {
+    if (!["submitted", "pricing"].includes(row.status)) {
+      return NextResponse.json({ error: "Взять можно только новую или в расчёте" }, { status: 400 });
+    }
     await prisma.purchaseRequest.update({
       where: { id },
       data: { ahoUserId: session.user.id, status: row.status === "submitted" ? "pricing" : row.status },
@@ -114,6 +117,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   }
 
   if (action === "rework") {
+    if (!["submitted", "pricing"].includes(row.status)) {
+      return NextResponse.json({ error: "Вернуть можно заявку на расчёте" }, { status: 400 });
+    }
     await prisma.purchaseRequest.update({
       where: { id },
       data: { status: "rework" },
@@ -158,26 +164,13 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   if (action === "send-fund") {
     const fund = row.fundRequest;
     if (!fund) return NextResponse.json({ error: "Нет служебной записки" }, { status: 400 });
+    if (!["draft", "rework"].includes(fund.status)) {
+      return NextResponse.json({ error: "Служебную записку уже отправили" }, { status: 400 });
+    }
     const amount = body.amount !== undefined ? rubToKopecks(body.amount) : fund.amount;
     const neededRaw = String(body.neededAt || "");
     if (neededRaw && neededRaw.slice(0, 10) < officeYmd()) {
       return NextResponse.json({ error: "Дата не может быть в прошлом" }, { status: 400 });
-    }
-    await prisma.fundRequest.update({
-      where: { id: fund.id },
-      data: {
-        amount,
-        details: body.details !== undefined ? String(body.details) : fund.details,
-        payee: body.payee !== undefined ? String(body.payee) : fund.payee,
-        neededAt: neededRaw ? new Date(neededRaw) : fund.neededAt,
-        managerId: body.managerId || fund.managerId,
-      },
-    });
-    if (body.ahoUserId) {
-      await prisma.purchaseRequest.update({
-        where: { id },
-        data: { ahoUserId: String(body.ahoUserId) },
-      });
     }
     if (amount <= 0) return NextResponse.json({ error: "Сначала укажите сумму" }, { status: 400 });
     const managerId = String(body.managerId || fund.managerId || "");
@@ -191,9 +184,19 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     }
     await prisma.fundRequest.update({
       where: { id: fund.id },
-      data: { status: "review", managerId },
+      data: {
+        amount,
+        details: body.details !== undefined ? String(body.details) : fund.details,
+        payee: body.payee !== undefined ? String(body.payee) : fund.payee,
+        neededAt: neededRaw ? new Date(neededRaw) : fund.neededAt,
+        managerId,
+        status: "review",
+      },
     });
-    await prisma.purchaseRequest.update({ where: { id }, data: { status: "review", ahoUserId: session.user.id } });
+    await prisma.purchaseRequest.update({
+      where: { id },
+      data: { status: "review", ahoUserId: String(body.ahoUserId || session.user.id) },
+    });
     await notify({
       userId: managerId,
       title: "Закупка на согласовании",

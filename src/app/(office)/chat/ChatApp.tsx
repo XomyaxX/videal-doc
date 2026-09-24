@@ -506,11 +506,31 @@ function Thread({
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
       const list: Msg[] = data.messages || [];
+      const lastPrev = [...rowsRef.current].reverse().find((m) => !m.id.startsWith("tmp-"));
+      if (lastPrev && list.length && list[list.length - 1]?.id === lastPrev.id) return;
       setRows((prev) => {
+        const incomingIds = new Set(list.map((m) => m.id));
+        const oldest = list[0];
+        const older = oldest
+          ? prev.filter((m) => !m.id.startsWith("tmp-") && !incomingIds.has(m.id) && m.createdAt <= oldest.createdAt)
+          : [];
         const temps = prev.filter((m) => m.id.startsWith("tmp-"));
-        return temps.length ? [...list, ...temps] : list;
+        const merged = [...older, ...list, ...temps];
+        const seen = new Set<string>();
+        const out: Msg[] = [];
+        for (const m of merged) {
+          if (seen.has(m.id)) continue;
+          seen.add(m.id);
+          out.push(m);
+        }
+        out.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+        return out;
       });
-      setHasMore(list.length >= 50);
+      const hadHistory = Boolean(
+        rowsRef.current[0] && list[0] && rowsRef.current[0].createdAt < list[0].createdAt,
+      );
+      if (list.length >= 50) setHasMore(true);
+      else if (!hadHistory) setHasMore(false);
     }
   }, [chatId]);
 

@@ -42,31 +42,33 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   await ensureDocumentRevisions(doc);
   const next = doc.version + 1;
-  await prisma.document.update({
-    where: { id: doc.id },
-    data: { originalFileId: saved.id, version: next },
-  });
-  await prisma.documentRevision.create({
-    data: {
-      documentId: doc.id,
-      version: next,
-      fileId: saved.id,
-      note: note || `Версия ${next}`,
-      authorId: session.user.id,
-    },
-  });
-  await prisma.documentRecipient.updateMany({
-    where: { documentId: doc.id },
-    data: {
-      viewedAt: null,
-      ackedAt: null,
-      signedAt: null,
-      signedFileId: "",
-      approvedAt: null,
-      rejectedAt: null,
-      rejectReason: "",
-    },
-  });
+  await prisma.$transaction([
+    prisma.document.update({
+      where: { id: doc.id },
+      data: { originalFileId: saved.id, version: next },
+    }),
+    prisma.documentRevision.create({
+      data: {
+        documentId: doc.id,
+        version: next,
+        fileId: saved.id,
+        note: note || `Версия ${next}`,
+        authorId: session.user.id,
+      },
+    }),
+    prisma.documentRecipient.updateMany({
+      where: { documentId: doc.id },
+      data: {
+        viewedAt: null,
+        ackedAt: null,
+        signedAt: null,
+        signedFileId: "",
+        approvedAt: null,
+        rejectedAt: null,
+        rejectReason: "",
+      },
+    }),
+  ]);
   await notifyMany(
     doc.recipients.map((r) => r.userId),
     {

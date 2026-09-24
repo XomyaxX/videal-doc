@@ -596,6 +596,7 @@ model Meeting {
   summaryJson        String    @default("")
   summaryMarkdown    String    @default("")
   summaryError       String    @default("")
+  summaryLockAt      DateTime?
   summaryDeliveredAt DateTime?
   summaryDelivered   String    @default("")
   summaryTaskIds     String    @default("")
@@ -903,6 +904,7 @@ model AppSettings {
   lastRemindAt    DateTime?
   lastBirthdayYmd String    @default("")
   lastDutyYmd     String    @default("")
+  dutyOverrides   String    @default("{}")
   prodDatesNeedApproval Boolean @default(false)
   currentEpisodeId String   @default("")
   officeCidrs      String   @default("")

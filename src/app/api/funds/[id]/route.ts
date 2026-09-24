@@ -32,6 +32,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const note = String(body.note || "");
 
   if (action === "submit") {
+    if (!["draft", "rework"].includes(row.status)) {
+      return NextResponse.json({ error: "Повторно отправить можно только черновик или доработку" }, { status: 400 });
+    }
     if (row.authorId !== session.user.id && !isAhoLinked) {
       return NextResponse.json({ error: "Только автор или АХО" }, { status: 403 });
     }
@@ -47,11 +50,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         { status: 400 },
       );
     }
-    await prisma.fundRequest.update({
-      where: { id },
-      data: { status: "review", managerId },
+    await prisma.$transaction(async (tx) => {
+      await tx.fundRequest.update({
+        where: { id },
+        data: { status: "review", managerId },
+      });
+      const next = FUND_FROM_PURCHASE.review;
+      if (row.purchaseRequestId && next) {
+        await tx.purchaseRequest.update({ where: { id: row.purchaseRequestId }, data: { status: next } });
+      }
     });
-    await syncPurchase(row.purchaseRequestId, "review");
     await notify({
       userId: managerId,
       title: "Запрос средств на согласовании",
@@ -74,6 +82,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   if (action === "approve" || action === "rework" || action === "reject") {
+    if (row.status !== "review") {
+      return NextResponse.json({ error: "Согласовать можно только заявку на рассмотрении" }, { status: 400 });
+    }
     const isMgr = row.managerId === session.user.id || userCan(session.user, "finance.approve");
     if (!isMgr) return NextResponse.json({ error: "Нет права согласовывать" }, { status: 403 });
     if (action === "approve") {
@@ -124,6 +135,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   if (action === "paid" || action === "acc-reject") {
+    if (row.status !== "to_pay") {
+      return NextResponse.json({ error: "Выплатить можно только согласованную заявку" }, { status: 400 });
+    }
     if (!["accountant", "admin", "superadmin"].includes(session.user.roleCode)) {
       return NextResponse.json({ error: "Нет права бухгалтерии" }, { status: 403 });
     }

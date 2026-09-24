@@ -6,7 +6,7 @@ import { fullName, shortName } from "./names";
 import { sendWebPushToUser } from "./push";
 import { assertInside, fileRoot } from "./files";
 import { userCan, type SessionUser } from "./types";
-import { decryptBytesDisk, decryptPayload, decryptText, encryptBytesDisk, encryptPayload, encryptText, getChatDek } from "./chat-key";
+import { decryptBytesDisk, decryptPayload, decryptText, encryptBytesDisk, encryptFileDisk, encryptPayload, encryptText, getChatDek } from "./chat-key";
 import { previewText, type ChatPayload } from "./chat-types";
 
 export type ChatPerson = {
@@ -242,6 +242,38 @@ export async function saveEncryptedBlob(opts: {
       id,
       chatId: opts.chatId,
       size: opts.buffer.length,
+      path: rel,
+      iv: enc.iv,
+      mime: (opts.mime || "").slice(0, 120),
+      originalName: (opts.originalName || "").slice(0, 200),
+      createdById: opts.userId,
+    },
+  });
+}
+
+export async function saveEncryptedBlobFromPath(opts: {
+  chatId: string;
+  userId: string;
+  srcPath: string;
+  size: number;
+  maxBytes: number;
+  mime?: string;
+  originalName?: string;
+}) {
+  if (opts.size === 0) throw new Error("Пустой файл");
+  if (opts.size > opts.maxBytes) throw new Error("Файл слишком большой");
+  const dek = await getChatDek();
+  const id = randomUUID();
+  const rel = path.posix.join("chat", opts.chatId, `${id}.bin`);
+  const dir = path.join(/* turbopackIgnore: true */ fileRoot(), "chat", opts.chatId);
+  await mkdir(dir, { recursive: true });
+  const abs = assertInside(fileRoot(), path.join(/* turbopackIgnore: true */ fileRoot(), rel));
+  const enc = await encryptFileDisk(dek, opts.srcPath, abs);
+  return prisma.chatBlob.create({
+    data: {
+      id,
+      chatId: opts.chatId,
+      size: opts.size,
       path: rel,
       iv: enc.iv,
       mime: (opts.mime || "").slice(0, 120),

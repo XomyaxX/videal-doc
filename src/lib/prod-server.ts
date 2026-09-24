@@ -80,7 +80,7 @@ export function taskListWhere(
   if (scope === "mine" || !canLeadProd(user)) {
     return { ...work, OR: mine };
   }
-  if (scope === "all" || canManageProd(user) || user.prodScope === "studio") {
+  if (canManageProd(user) || user.prodScope === "studio") {
     return work;
   }
   const names = userDeptNames(user);

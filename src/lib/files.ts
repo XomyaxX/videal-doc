@@ -1,10 +1,14 @@
 import { createHash, randomUUID } from "crypto";
-import { mkdir, writeFile, readFile } from "fs/promises";
+import { createReadStream, createWriteStream } from "fs";
+import { appendFile, mkdir, open, readdir, readFile, rm, stat, writeFile } from "fs/promises";
 import path from "path";
+import { pipeline } from "stream/promises";
+import { Transform } from "stream";
 import { prisma } from "./prisma";
 import { userCan, type SessionUser } from "./types";
 import { canViewArchive } from "./archive-access";
 import { canLeadProd, canManageProd } from "./prod";
+import { canSeeMeeting } from "./meet";
 
 const ALLOWED: Record<string, string[]> = {
   "application/pdf": [".pdf"],
@@ -63,6 +67,49 @@ export function assertInside(root: string, abs: string) {
   return a;
 }
 
+export async function assemblePartFiles(dir: string, chunkTotal: number, maxBytes: number) {
+  const dest = assertInside(dir, path.join(/* turbopackIgnore: true */ dir, "assembled.bin"));
+  let total = 0;
+  for (let i = 0; i < chunkTotal; i++) {
+    const p = assertInside(dir, path.join(/* turbopackIgnore: true */ dir, `${String(i).padStart(5, "0")}.part`));
+    const buf = await readFile(/* turbopackIgnore: true */ p);
+    total += buf.length;
+    if (total > maxBytes) throw new Error("Файл слишком большой");
+    await appendFile(/* turbopackIgnore: true */ dest, buf);
+  }
+  return { path: dest, size: total };
+}
+
+export async function readFileHead(abs: string, bytes = 64 * 1024) {
+  const fh = await open(/* turbopackIgnore: true */ abs, "r");
+  try {
+    const buf = Buffer.alloc(bytes);
+    const { bytesRead } = await fh.read(buf, 0, bytes, 0);
+    return buf.subarray(0, bytesRead);
+  } finally {
+    await fh.close();
+  }
+}
+
+export async function pruneTmpUploads(subdir: string, maxAgeMs = 24 * 60 * 60 * 1000) {
+  const root = path.join(/* turbopackIgnore: true */ fileRoot(), subdir);
+  try {
+    const names = await readdir(/* turbopackIgnore: true */ root);
+    const now = Date.now();
+    for (const name of names) {
+      const abs = assertInside(root, path.join(/* turbopackIgnore: true */ root, name));
+      try {
+        const st = await stat(/* turbopackIgnore: true */ abs);
+        if (now - st.mtimeMs > maxAgeMs) await rm(/* turbopackIgnore: true */ abs, { recursive: true, force: true });
+      } catch {
+        /* skip */
+      }
+    }
+  } catch {
+    /* no tmp dir */
+  }
+}
+
 export function sniffMime(buffer: Buffer, declared: string, filename: string): string | null {
   const ext = path.extname(filename).toLowerCase();
   if (looksPdf(buffer) && (ext === ".pdf" || ext === "" || declared.includes("pdf"))) {
@@ -115,6 +162,50 @@ export async function saveUpload(opts: {
       size: opts.buffer.length,
       path: rel,
       sha256,
+      createdById: opts.userId,
+    },
+  });
+}
+
+export async function saveUploadFromPath(opts: {
+  srcPath: string;
+  size: number;
+  originalName: string;
+  declaredMime: string;
+  userId: string;
+  maxBytes: number;
+}) {
+  if (opts.size === 0) throw new Error("Пустой файл");
+  if (opts.size > opts.maxBytes) throw new Error("Файл слишком большой");
+  const head = await readFileHead(opts.srcPath);
+  const mime = sniffMime(head, opts.declaredMime, opts.originalName);
+  if (!mime) throw new Error("Этот тип файла нельзя загрузить");
+
+  const id = randomUUID();
+  const ext = path.extname(opts.originalName).toLowerCase() || "";
+  const rel = `${id}${ext}`;
+  const dir = fileRoot();
+  await mkdir(dir, { recursive: true });
+  const abs = assertInside(dir, path.join(/* turbopackIgnore: true */ dir, rel));
+  const hash = createHash("sha256");
+  await pipeline(
+    createReadStream(/* turbopackIgnore: true */ opts.srcPath),
+    new Transform({
+      transform(chunk, _enc, cb) {
+        hash.update(chunk);
+        cb(null, chunk);
+      },
+    }),
+    createWriteStream(/* turbopackIgnore: true */ abs),
+  );
+  return prisma.storedFile.create({
+    data: {
+      id,
+      originalName: path.basename(opts.originalName).slice(0, 200),
+      mimeType: mime,
+      size: opts.size,
+      path: rel,
+      sha256: hash.digest("hex"),
       createdById: opts.userId,
     },
   });
@@ -262,28 +353,22 @@ export async function canReadStoredFile(user: SessionUser, fileId: string): Prom
     ]);
     if (member || assigned) return true;
   }
-  const meetFile = await prisma.meetingFile.findFirst({
+  const meetByFile = await prisma.meeting.findFirst({
     where: {
-      fileId,
-      meeting: {
-        deletedAt: null,
-        OR: [{ authorId: user.id }, { participants: { some: { userId: user.id } } }],
-      },
+      deletedAt: null,
+      OR: [
+        { recordingFileId: fileId },
+        { files: { some: { OR: [{ fileId }, { previewFileId: fileId }] } } },
+      ],
     },
-    select: { id: true },
-  });
-  if (meetFile) return true;
-  const meetPrev = await prisma.meetingFile.findFirst({
-    where: {
-      previewFileId: fileId,
-      meeting: {
-        deletedAt: null,
-        OR: [{ authorId: user.id }, { participants: { some: { userId: user.id } } }],
-      },
+    select: {
+      authorId: true,
+      visibility: true,
+      participants: { select: { userId: true } },
+      viewers: { select: { userId: true } },
     },
-    select: { id: true },
   });
-  if (meetPrev) return true;
+  if (meetByFile && canSeeMeeting(user, meetByFile)) return true;
   const libPrev = await prisma.libraryFile.findFirst({
     where: { previewFileId: fileId, item: { deletedAt: null } },
     select: { id: true },

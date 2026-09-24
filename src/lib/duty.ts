@@ -125,7 +125,32 @@ export function pickByWeek(roster: DutyPerson[], ymd: string) {
   return roster[Math.abs(weekIndex(ymd)) % roster.length];
 }
 
-export function pickByWorkday(roster: DutyPerson[], ymd: string) {
+export type DutyOverrides = Record<string, { clean?: string[]; trash?: string }>;
+
+async function loadDutyOverrides(): Promise<DutyOverrides> {
+  const s = await prisma.appSettings.findUnique({ where: { id: "default" }, select: { dutyOverrides: true } });
+  try {
+    const raw = JSON.parse(s?.dutyOverrides || "{}") as DutyOverrides;
+    return raw && typeof raw === "object" ? raw : {};
+  } catch {
+    return {};
+  }
+}
+
+function byIds(roster: DutyPerson[], ids: string[] | undefined) {
+  if (!ids?.length) return null;
+  const found = ids
+    .map((id) => roster.find((p) => p.id === id))
+    .filter((p): p is DutyPerson => Boolean(p));
+  return found.length ? found : null;
+}
+
+export function pickByWorkday(roster: DutyPerson[], ymd: string, overrides: DutyOverrides = {}) {
+  const over = overrides[ymd]?.trash;
+  if (over) {
+    const p = roster.find((x) => x.id === over);
+    if (p) return p;
+  }
   if (!roster.length || !isWorkday(ymd)) return null;
   return roster[Math.abs(workdayIndex(ymd)) % roster.length];
 }
@@ -142,7 +167,9 @@ export function cleanSlotIndex(ymd: string) {
   return (Math.abs(weekIndex(ymd)) - 1) * 2 + inWeek;
 }
 
-export function pickCleanPair(roster: DutyPerson[], ymd: string): DutyPerson[] {
+export function pickCleanPair(roster: DutyPerson[], ymd: string, overrides: DutyOverrides = {}): DutyPerson[] {
+  const over = byIds(roster, overrides[ymd]?.clean);
+  if (over) return over;
   if (!roster.length || !isCleanDay(ymd)) return [];
   if (roster.length === 1) return [roster[0]];
   const slot = Math.abs(cleanSlotIndex(ymd));
@@ -158,17 +185,18 @@ export function pickDuty(roster: DutyPerson[], ymd: string) {
 
 export async function dutyForWeek(ymd = officeYmd()) {
   const mon = mondayOfYmd(ymd);
-  const [men, women] = await Promise.all([dutyRoster("m"), dutyRoster("f")]);
+  const [men, women, overrides] = await Promise.all([dutyRoster("m"), dutyRoster("f"), loadDutyOverrides()]);
   return {
     monday: mon,
     friday: addDaysYmd(mon, 4),
     label: fmtWeek(mon),
     today: ymd,
     todayLabel: fmtDay(ymd),
-    trash: pickByWorkday(men, ymd),
-    clean: pickCleanPair(women, ymd),
+    trash: pickByWorkday(men, ymd, overrides),
+    clean: pickCleanPair(women, ymd, overrides),
     men,
     women,
+    overrides,
   };
 }
 
@@ -187,24 +215,24 @@ export function upcomingWeeks(roster: DutyPerson[], fromYmd: string, count = 12)
   return rows;
 }
 
-export function upcomingWorkdays(roster: DutyPerson[], fromYmd: string, count = 20) {
+export function upcomingWorkdays(roster: DutyPerson[], fromYmd: string, count = 20, overrides: DutyOverrides = {}) {
   const rows: { ymd: string; label: string; person: DutyPerson | null }[] = [];
   let ymd = mondayOfYmd(fromYmd);
   while (rows.length < count) {
     if (isWorkday(ymd)) {
-      rows.push({ ymd, label: fmtDayShort(ymd), person: pickByWorkday(roster, ymd) });
+      rows.push({ ymd, label: fmtDayShort(ymd), person: pickByWorkday(roster, ymd, overrides) });
     }
     ymd = addDaysYmd(ymd, 1);
   }
   return rows;
 }
 
-export function upcomingCleanDays(roster: DutyPerson[], fromYmd: string, count = 16) {
+export function upcomingCleanDays(roster: DutyPerson[], fromYmd: string, count = 16, overrides: DutyOverrides = {}) {
   const rows: { ymd: string; label: string; people: DutyPerson[] }[] = [];
   let ymd = mondayOfYmd(fromYmd);
   while (rows.length < count) {
     if (isCleanDay(ymd)) {
-      rows.push({ ymd, label: fmtDayShort(ymd), people: pickCleanPair(roster, ymd) });
+      rows.push({ ymd, label: fmtDayShort(ymd), people: pickCleanPair(roster, ymd, overrides) });
     }
     ymd = addDaysYmd(ymd, 1);
   }

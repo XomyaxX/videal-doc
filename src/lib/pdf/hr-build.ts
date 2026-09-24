@@ -4,13 +4,14 @@ import { officeDateParts, officeYmd } from "@/lib/dates";
 import { shortNamePlain, fullName } from "@/lib/names";
 import { orgLetterhead, orgNameShort } from "@/lib/org";
 import { hrType, letterBody } from "@/lib/hrdocs";
+import { USER_SAFE_ORG_SELECT } from "@/lib/user-public";
 
 export async function buildHrPdfById(id: string): Promise<{ buffer: Buffer; number: string; title: string } | null> {
   const row = await prisma.hrRequest.findUnique({
     where: { id },
     include: {
-      author: { include: { position: true, department: true } },
-      manager: { include: { position: true } },
+      author: { select: USER_SAFE_ORG_SELECT },
+      manager: { select: USER_SAFE_ORG_SELECT },
     },
   });
   if (!row) return null;

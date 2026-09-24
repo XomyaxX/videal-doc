@@ -16,6 +16,7 @@ function groqBase() {
 const CHUNK = 24 * 1024 * 1024;
 
 const running = new Set<string>();
+let meetJobBusy = false;
 
 function groqKey() {
   return process.env.GROQ_API_KEY || "";
@@ -51,14 +52,53 @@ export async function saveMeetingRecording(opts: {
   });
 }
 
+const LOCK_MS = 2 * 60 * 60 * 1000;
+let bootLocksCleared = false;
+
+async function takeJobLock(id: string) {
+  const stale = new Date(Date.now() - LOCK_MS);
+  const fresh = await prisma.meeting.updateMany({
+    where: { id, deletedAt: null, OR: [{ summaryLockAt: null }, { summaryLockAt: { lt: stale } }] },
+    data: { summaryLockAt: new Date() },
+  });
+  return fresh.count > 0;
+}
+
+async function dropJobLock(id: string) {
+  await prisma.meeting.update({ where: { id }, data: { summaryLockAt: null } }).catch(() => {});
+}
+
+/** After videal-edo restart the in-memory slot is empty; leftover DB locks would block resume for LOCK_MS. */
+async function releaseLocksFromPreviousProcess() {
+  if (bootLocksCleared) return;
+  bootLocksCleared = true;
+  if (running.size) return;
+  await prisma.meeting.updateMany({
+    where: { summaryLockAt: { not: null } },
+    data: { summaryLockAt: null },
+  });
+}
+
 export function kickMeetingJob(id: string) {
-  if (running.has(id)) return;
+  if (meetJobBusy || running.has(id)) return;
+  meetJobBusy = true;
   running.add(id);
-  void processMeeting(id).finally(() => running.delete(id));
+  void (async () => {
+    if (!(await takeJobLock(id))) return;
+    try {
+      await processMeeting(id);
+    } finally {
+      await dropJobLock(id);
+    }
+  })().finally(() => {
+    running.delete(id);
+    meetJobBusy = false;
+  });
 }
 
 export async function tickMeetJobs() {
-  if (running.size) return;
+  if (meetJobBusy || running.size) return;
+  await releaseLocksFromPreviousProcess();
   const rows = await prisma.meeting.findMany({
     where: { deletedAt: null, summaryStatus: { in: ["recording_uploaded", "transcribing", "summarizing"] } },
     select: { id: true },
@@ -186,7 +226,7 @@ async function transcribeDiarized(buf: Buffer, name: string) {
   const size = process.env.WHISPER_MODEL || "small";
   const env = { ...process.env };
   const r = await new Promise<{ code: number; out: string; err: string }>((resolve) => {
-    const p = spawn(py, [script, tmp, lang, size], { env });
+    const p = spawn(/* turbopackIgnore: true */ py, [script, tmp, lang, size], { env });
     let out = "";
     let err = "";
     p.stdout.on("data", (d) => {

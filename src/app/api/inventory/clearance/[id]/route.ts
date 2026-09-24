@@ -78,7 +78,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     });
   }
 
-  if (Array.isArray(body.lines) && row.status === "open") {
+  if (Array.isArray(body.lines) && row.status === "open" && body.status !== "done") {
     for (const l of body.lines) {
       if (!l?.id) continue;
       await prisma.clearanceLine.updateMany({
@@ -123,16 +123,31 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   }
 
   if (body.status === "done" && row.status === "open") {
-    if (body.unassign) {
-      const ids = row.lines.filter((l) => l.returned && l.inventoryItemId).map((l) => l.inventoryItemId);
-      if (ids.length) {
-        await prisma.inventoryItem.updateMany({
-          where: { id: { in: ids }, userId: row.userId },
-          data: { userId: null, holderName: "" },
-        });
+    await prisma.$transaction(async (tx) => {
+      if (Array.isArray(body.lines)) {
+        for (const l of body.lines) {
+          if (!l?.id) continue;
+          await tx.clearanceLine.updateMany({
+            where: { id: String(l.id), sheetId: id },
+            data: {
+              returned: Boolean(l.returned),
+              note: String(l.note || "").trim().slice(0, 400),
+            },
+          });
+        }
       }
-    }
-    await prisma.clearanceSheet.update({ where: { id }, data: { status: "done", closedAt: new Date() } });
+      if (body.unassign) {
+        const lines = await tx.clearanceLine.findMany({ where: { sheetId: id } });
+        const ids = lines.filter((l) => l.returned && l.inventoryItemId).map((l) => l.inventoryItemId as string);
+        if (ids.length) {
+          await tx.inventoryItem.updateMany({
+            where: { id: { in: ids }, userId: row.userId },
+            data: { userId: null, holderName: "" },
+          });
+        }
+      }
+      await tx.clearanceSheet.update({ where: { id }, data: { status: "done", closedAt: new Date() } });
+    });
     await audit({ userId: session.user.id, action: "clearance.close", entity: "clearance", entityId: id });
   }
 

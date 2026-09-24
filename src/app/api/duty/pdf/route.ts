@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { DUTY, addDaysYmd, dutyRoster, fmtWeek, mondayOfYmd, officeStaff, upcomingCleanDays, upcomingWorkdays, weekdayIso } from "@/lib/duty";
+import { DUTY, addDaysYmd, dutyForWeek, fmtWeek, mondayOfYmd, officeStaff, upcomingCleanDays, upcomingWorkdays, weekdayIso } from "@/lib/duty";
 import { officeYmd } from "@/lib/dates";
 import { renderDutyPdf, renderJournalPdf } from "@/lib/pdf/render";
 
@@ -33,15 +33,16 @@ export async function GET(req: NextRequest) {
     });
   }
   const spec = kind === "clean" ? DUTY.clean : DUTY.trash;
-  const roster = await dutyRoster(spec.gender);
+  const cur = await dutyForWeek(now);
+  const roster = kind === "clean" ? cur.women : cur.men;
   const rows =
     kind === "clean"
-      ? upcomingCleanDays(roster, now, 16).map((d, i) => ({
+      ? upcomingCleanDays(roster, now, 16, cur.overrides).map((d, i) => ({
           n: i + 1,
           period: d.label,
           name: d.people.map((p) => p.name).join(" · ") || "—",
         }))
-      : upcomingWorkdays(roster, now, 20).map((d, i) => ({
+      : upcomingWorkdays(roster, now, 20, cur.overrides).map((d, i) => ({
           n: i + 1,
           period: d.label,
           name: d.person?.name || "—",

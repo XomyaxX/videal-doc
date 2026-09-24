@@ -4,13 +4,14 @@ import { prisma } from "@/lib/prisma";
 import { notify } from "@/lib/notify";
 import { archiveHrLetter, archiveHrScan } from "@/lib/archive";
 import { mailSettings, sendMailToUser, siteUrl } from "@/lib/mail";
+import { USER_SAFE_ORG_SELECT } from "@/lib/user-public";
 
 async function load(id: string) {
   return prisma.hrRequest.findUnique({
     where: { id },
     include: {
-      author: { include: { position: true, department: true } },
-      manager: { include: { position: true, department: true } },
+      author: { select: USER_SAFE_ORG_SELECT },
+      manager: { select: USER_SAFE_ORG_SELECT },
     },
   });
 }

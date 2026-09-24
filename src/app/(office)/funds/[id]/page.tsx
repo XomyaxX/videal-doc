@@ -10,6 +10,7 @@ import { fullName } from "@/lib/names";
 import { isFundApprover } from "@/lib/leaders";
 import { dueLabel, issuedYmd, reportDueYmd } from "@/lib/report-period";
 import { FundActions } from "../FundActions";
+import { USER_SAFE_ORG_SELECT, USER_SAFE_SELECT } from "@/lib/user-public";
 
 export default async function FundPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
@@ -17,12 +18,12 @@ export default async function FundPage({ params }: { params: Promise<{ id: strin
   const row = await prisma.fundRequest.findFirst({
     where: { id, deletedAt: null },
     include: {
-      author: { include: { position: true, department: true } },
-      manager: true,
-      accountant: true,
+      author: { select: USER_SAFE_ORG_SELECT },
+      manager: { select: USER_SAFE_SELECT },
+      accountant: { select: USER_SAFE_SELECT },
       files: true,
       purchaseRequest: {
-        include: { ahoUser: { include: { position: true, department: true } } },
+        include: { ahoUser: { select: USER_SAFE_ORG_SELECT } },
       },
     },
   });

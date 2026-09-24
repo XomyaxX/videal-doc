@@ -52,8 +52,8 @@ export default async function DutyPage() {
   const user = await requireUser();
   const now = officeYmd();
   const cur = await dutyForWeek(now);
-  const trashDays = upcomingWorkdays(cur.men, now, 20);
-  const cleanDays = upcomingCleanDays(cur.women, now, 16);
+  const trashDays = upcomingWorkdays(cur.men, now, 20, cur.overrides);
+  const cleanDays = upcomingCleanDays(cur.women, now, 16, cur.overrides);
   const weekend = weekdayIso(now) > 5;
 
   return (

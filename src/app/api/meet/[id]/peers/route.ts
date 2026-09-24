@@ -4,7 +4,7 @@ import { canJoinNow } from "@/lib/meet";
 import { meetActor } from "@/lib/meet-guest";
 import { fullName } from "@/lib/names";
 
-export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
   const actor = await meetActor(id);
   if (!actor) return NextResponse.json({ error: "Нет доступа" }, { status: 403 });
@@ -22,7 +22,15 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
       guest: { select: { id: true, name: true } },
     },
   });
+  const rev = `${meet.status}:${meet.updatedAt.getTime()}:${peers
+    .map((p) => `${p.userId || p.guestId}:${p.updatedAt.getTime()}:${p.audioOn}:${p.videoOn}:${p.screenOn}`)
+    .join(",")}`;
+  const want = req.nextUrl.searchParams.get("rev") || "";
+  if (want && want === rev) {
+    return NextResponse.json({ unchanged: true, rev, status: meet.status });
+  }
   return NextResponse.json({
+    rev,
     status: meet.status,
     peers: peers.map((p) => {
       const pid = p.userId || p.guestId || p.id;

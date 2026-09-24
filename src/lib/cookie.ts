@@ -7,7 +7,7 @@ export function sessionCookieOpts(req?: NextRequest) {
     httpOnly: true,
     sameSite: "lax" as const,
     path: "/",
-    maxAge: 60 * 60 * 24 * 30,
+    maxAge: 60 * 60 * 24 * 90,
     secure,
   };
 }

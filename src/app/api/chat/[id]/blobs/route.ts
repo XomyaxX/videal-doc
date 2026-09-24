@@ -3,10 +3,10 @@ import path from "path";
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { requireMember, saveEncryptedBlob } from "@/lib/chat-server";
+import { requireMember, saveEncryptedBlob, saveEncryptedBlobFromPath } from "@/lib/chat-server";
 import { rateLimit } from "@/lib/login-guard";
-import { convertToGlb } from "@/lib/glb-convert";
-import { assertInside, fileRoot } from "@/lib/files";
+import { convertToGlb, needsGlbPreview } from "@/lib/glb-convert";
+import { assemblePartFiles, assertInside, fileRoot, pruneTmpUploads } from "@/lib/files";
 
 async function attachGlbPreview(opts: {
   chatId: string;
@@ -58,6 +58,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       if (chunkIndex < 0 || chunkIndex >= chunkTotal || chunkTotal > 200) {
         return NextResponse.json({ error: "Неверный кусок" }, { status: 400 });
       }
+      void pruneTmpUploads("tmp-chat");
       const dir = assertInside(fileRoot(), path.join(fileRoot(), "tmp-chat", uploadId));
       await mkdir(dir, { recursive: true });
       const part = assertInside(dir, path.join(dir, `${String(chunkIndex).padStart(5, "0")}.part`));
@@ -65,20 +66,45 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       if (chunkIndex < chunkTotal - 1) {
         return NextResponse.json({ ok: true, chunk: chunkIndex });
       }
-      const parts: Buffer[] = [];
-      let total = 0;
-      for (let i = 0; i < chunkTotal; i++) {
-        const p = assertInside(dir, path.join(dir, `${String(i).padStart(5, "0")}.part`));
-        const buf = await readFile(/* turbopackIgnore: true */ p);
-        total += buf.length;
-        if (total > maxBytes) {
-          await rm(/* turbopackIgnore: true */ dir, { recursive: true, force: true });
-          return NextResponse.json({ error: "Файл слишком большой" }, { status: 400 });
-        }
-        parts.push(buf);
+      let assembled: { path: string; size: number };
+      try {
+        assembled = await assemblePartFiles(dir, chunkTotal, maxBytes);
+      } catch (e) {
+        await rm(/* turbopackIgnore: true */ dir, { recursive: true, force: true });
+        return NextResponse.json({ error: e instanceof Error ? e.message : "Файл слишком большой" }, { status: 400 });
       }
-      buffer = Buffer.concat(parts);
-      await rm(/* turbopackIgnore: true */ dir, { recursive: true, force: true });
+      try {
+        const saved = await saveEncryptedBlobFromPath({
+          chatId: id,
+          userId: session.user.id,
+          srcPath: assembled.path,
+          size: assembled.size,
+          maxBytes,
+          mime: file.type,
+          originalName,
+        });
+        if (needsGlbPreview(originalName)) {
+          const full = await readFile(/* turbopackIgnore: true */ assembled.path);
+          await attachGlbPreview({
+            chatId: id,
+            userId: session.user.id,
+            blobId: saved.id,
+            buffer: full,
+            originalName,
+            maxBytes,
+          });
+        }
+        const fresh = await prisma.chatBlob.findUnique({ where: { id: saved.id }, select: { previewId: true } });
+        return NextResponse.json({
+          id: saved.id,
+          size: saved.size,
+          mime: saved.mime,
+          originalName: saved.originalName,
+          previewId: fresh?.previewId || "",
+        });
+      } finally {
+        await rm(/* turbopackIgnore: true */ dir, { recursive: true, force: true });
+      }
     }
     const saved = await saveEncryptedBlob({
       chatId: id,

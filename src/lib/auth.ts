@@ -145,17 +145,16 @@ export async function getSession(): Promise<{ token: string; user: SessionUser }
   if (session.user.deletedAt || session.user.status !== "active") return null;
   const user = toUser(session.user);
   user.totpOk = session.totpOk;
-  const path = (await headers()).get("x-vd-path") || "";
-  const gateApi =
-    (session.user.mustChangePassword || twoFactorPending(user)) && path.startsWith("/api/");
-  if (gateApi) {
-    const ok =
+  const pending = session.user.mustChangePassword || twoFactorPending(user);
+  if (pending) {
+    const path = (await headers()).get("x-vd-path") || "";
+    const authOk =
       path.startsWith("/api/auth/password") ||
       path.startsWith("/api/auth/logout") ||
       path.startsWith("/api/auth/switch") ||
       path.startsWith("/api/auth/accounts") ||
       path.startsWith("/api/auth/2fa");
-    if (!ok) return null;
+    if (!authOk && (!path || path.startsWith("/api/"))) return null;
   }
   if (Date.now() - session.lastSeenAt.getTime() > 5 * 60 * 1000) {
     await prisma.session.update({

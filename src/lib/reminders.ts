@@ -5,6 +5,7 @@ import { tickBirthdays } from "./birthdays";
 import { tickDuty } from "./duty";
 import { officeYmd } from "./dates";
 import { daysUntilYmd, dueLabel, issuedYmd, reportDueYmd } from "./report-period";
+import { stat } from "fs/promises";
 
 export async function tickReminders() {
   tickBirthdays().catch(() => {});
@@ -108,6 +109,36 @@ export async function tickReminders() {
         body: `${dueNow.length} шт. — сотрудники должны отчитаться к 5-му числу`,
         link: "/finance",
         urgency: "normal",
+      });
+    }
+  }
+
+  const admins = await prisma.user.findMany({
+    where: { deletedAt: null, status: "active", role: { code: { in: ["admin", "superadmin"] } } },
+    select: { id: true },
+  });
+  try {
+    const st = await stat(/* turbopackIgnore: true */ "/mnt/nas-backup/Videal-Ubuntu/.last-backup-ok");
+    const ageH = (now.getTime() - st.mtimeMs) / 36e5;
+    if (ageH > 36) {
+      for (const a of admins) {
+        await notify({
+          userId: a.id,
+          title: "Резервная копия просрочена",
+          body: `Последний успешный NAS-снимок старше ${Math.round(ageH)} ч. Проверьте шару «резервное копирование».`,
+          link: "/admin/backup",
+          urgency: "urgent",
+        });
+      }
+    }
+  } catch {
+    for (const a of admins) {
+      await notify({
+        userId: a.id,
+        title: "Резервная копия недоступна",
+        body: "Файл .last-backup-ok на NAS не найден. Ночное копирование, скорее всего, не проходит.",
+        link: "/admin/backup",
+        urgency: "urgent",
       });
     }
   }

@@ -12,9 +12,11 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   const since = after
     ? (await prisma.meetingSignal.findUnique({ where: { id: after }, select: { createdAt: true } }))?.createdAt
     : null;
-  await prisma.meetingSignal.deleteMany({
-    where: { meetingId: id, createdAt: { lt: new Date(Date.now() - 2 * 60 * 1000) } },
-  });
+  if (Math.random() < 0.08) {
+    await prisma.meetingSignal.deleteMany({
+      where: { meetingId: id, createdAt: { lt: new Date(Date.now() - 2 * 60 * 1000) } },
+    });
+  }
   const rows = await prisma.meetingSignal.findMany({
     where: {
       meetingId: id,

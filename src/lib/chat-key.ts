@@ -1,4 +1,6 @@
 import { createCipheriv, createDecipheriv, createHash, pbkdf2Sync, randomBytes } from "crypto";
+import { createReadStream, createWriteStream } from "fs";
+import { pipeline } from "stream/promises";
 import { prisma } from "./prisma";
 import { revealSecret, storeSecret } from "./secret";
 import { BIP39_EN } from "./chat-words";
@@ -70,6 +72,14 @@ export function encryptBytesDisk(dek: Buffer, data: Buffer): { iv: string; bytes
   const enc = Buffer.concat([c.update(data), c.final()]);
   const tag = c.getAuthTag();
   return { iv: Buffer.concat([iv, tag]).toString("base64"), bytes: enc };
+}
+
+export async function encryptFileDisk(dek: Buffer, srcPath: string, destPath: string): Promise<{ iv: string }> {
+  const iv = randomBytes(12);
+  const c = createCipheriv("aes-256-gcm", dek, iv);
+  await pipeline(createReadStream(srcPath), c, createWriteStream(destPath));
+  const tag = c.getAuthTag();
+  return { iv: Buffer.concat([iv, tag]).toString("base64") };
 }
 
 export function decryptBytesDisk(dek: Buffer, ivB64: string, data: Buffer): Buffer {

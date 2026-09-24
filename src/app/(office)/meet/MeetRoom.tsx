@@ -76,6 +76,7 @@ export function MeetRoom({ meet, meId, hangupHref }: { meet: MeetDto; meId: stri
   const pcs = useRef(new Map<string, RTCPeerConnection>());
   const making = useRef(new Map<string, boolean>());
   const after = useRef("");
+  const peerRev = useRef("");
   const wrap = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -458,13 +459,20 @@ export function MeetRoom({ meet, meId, hangupHref }: { meet: MeetDto; meId: stri
   useEffect(() => {
     if (!ready) return;
     let stop = false;
+    let inflight = false;
     async function tick() {
-      if (stop) return;
+      if (stop || inflight) return;
+      inflight = true;
+      try {
       heartbeat();
-      const pr = await fetch(`/api/meet/${meet.id}/peers`);
+      const pr = await fetch(`/api/meet/${meet.id}/peers?rev=${encodeURIComponent(peerRev.current)}`);
       const pd = await pr.json().catch(() => ({}));
-      const list: PeerInfo[] = (pd.peers || []).filter((p: PeerInfo) => p.id !== meId);
-      setPeers(list);
+      if (pd.rev) peerRev.current = String(pd.rev);
+      let list: PeerInfo[] = [];
+      if (!pd.unchanged) {
+        list = (pd.peers || []).filter((p: PeerInfo) => p.id !== meId);
+        setPeers(list);
+      }
       if (pd.status === "done" || pd.status === "cancelled") {
         await hangup();
         return;
@@ -528,12 +536,21 @@ export function MeetRoom({ meet, meId, hangupHref }: { meet: MeetDto; meId: stri
           }
         }
       }
+      } finally {
+        inflight = false;
+      }
     }
-    void tick();
-    const t = setInterval(() => void tick(), 500);
+    let timer = 0;
+    async function loop() {
+      if (stop) return;
+      await tick();
+      const live = [...pcs.current.values()].some((pc) => pc.connectionState === "connected");
+      timer = window.setTimeout(() => void loop(), live ? 2000 : 800);
+    }
+    void loop();
     return () => {
       stop = true;
-      clearInterval(t);
+      window.clearTimeout(timer);
     };
   }, [ready, meet.id, meId, heartbeat, offerTo, ensurePc, postSignal, hangup, drainIce]);
 

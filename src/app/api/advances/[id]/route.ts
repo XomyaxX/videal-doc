@@ -12,7 +12,7 @@ import { aoDateFromReceipts } from "@/lib/dates";
 async function load(id: string) {
   return prisma.advanceReport.findFirst({
     where: { id, deletedAt: null },
-    include: { receipts: true, user: true },
+    include: { receipts: true, user: { select: { id: true, lastName: true, firstName: true, middleName: true } } },
   });
 }
 
@@ -56,7 +56,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
     if (spent <= 0) return NextResponse.json({ error: "Сумма расходов не может быть нулевой" }, { status: 400 });
     const reportDate = aoDateFromReceipts(report.receipts) || report.reportDate;
-    await prisma.advanceReport.update({ where: { id }, data: { status: "review", reportDate } });
+    await prisma.$transaction([
+      prisma.advanceReport.update({ where: { id }, data: { status: "review", reportDate } }),
+      prisma.auditLog.create({
+        data: {
+          userId: session.user.id,
+          action: "advance.submit",
+          entity: "advance",
+          entityId: id,
+          details: "",
+          ip: "",
+        },
+      }),
+    ]);
     await archiveAdvance(id);
     const accountants = await prisma.user.findMany({
       where: { deletedAt: null, status: "active", role: { code: { in: ["accountant", "admin", "superadmin"] } } },
@@ -70,7 +82,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         urgency: "normal",
       });
     }
-    await audit({ userId: session.user.id, action: "advance.submit", entity: "advance", entityId: id });
     if (action === "submit-mail") {
       const mailed = await mailAdvanceToAccountant({ reportId: id, fromUserId: session.user.id });
       if (!mailed.ok) {
@@ -107,11 +118,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ ok: true });
   }
 
-  if (action === "review" || action === "rework" || action === "approve" || action === "accept") {
+  if (action === "review" || action === "review-ok" || action === "rework" || action === "approve" || action === "accept") {
     if (!userCan(session.user, "finance.approve")) return NextResponse.json({ error: "Нет права согласовывать" }, { status: 403 });
   }
 
   if (action === "rework") {
+    if (report.status !== "review") return NextResponse.json({ error: "Можно вернуть только с проверки" }, { status: 400 });
     await prisma.advanceReport.update({
       where: { id },
       data: { status: "rework", accountantNote: String(body.note || ""), accountantId: session.user.id },
@@ -127,6 +139,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   if (action === "review-ok") {
+    if (report.status !== "review") return NextResponse.json({ error: "Сначала отчёт должен быть на проверке" }, { status: 400 });
     await prisma.advanceReport.update({
       where: { id },
       data: {
@@ -147,6 +160,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   if (action === "accept") {
+    if (report.status !== "approve") return NextResponse.json({ error: "Сначала нужна проверка бухгалтера" }, { status: 400 });
     await prisma.advanceReport.update({
       where: { id },
       data: {

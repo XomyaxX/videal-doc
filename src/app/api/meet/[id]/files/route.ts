@@ -3,9 +3,9 @@ import path from "path";
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { assertInside, fileRoot, saveUpload } from "@/lib/files";
+import { assemblePartFiles, assertInside, fileRoot, pruneTmpUploads, saveUpload, saveUploadFromPath } from "@/lib/files";
 import { requireMeetAccess } from "@/lib/meet";
-import { storeGlbPreview } from "@/lib/glb-convert";
+import { needsGlbPreview, storeGlbPreview } from "@/lib/glb-convert";
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -30,6 +30,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       if (chunkIndex < 0 || chunkIndex >= chunkTotal || chunkTotal > 200) {
         return NextResponse.json({ error: "Неверный кусок" }, { status: 400 });
       }
+      void pruneTmpUploads("tmp-meet");
       const dir = assertInside(fileRoot(), path.join(fileRoot(), "tmp-meet", uploadId));
       await mkdir(dir, { recursive: true });
       const part = assertInside(dir, path.join(dir, `${String(chunkIndex).padStart(5, "0")}.part`));
@@ -37,20 +38,39 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       if (chunkIndex < chunkTotal - 1) {
         return NextResponse.json({ ok: true, chunk: chunkIndex });
       }
-      const parts: Buffer[] = [];
-      let total = 0;
-      for (let i = 0; i < chunkTotal; i++) {
-        const p = assertInside(dir, path.join(dir, `${String(i).padStart(5, "0")}.part`));
-        const buf = await readFile(/* turbopackIgnore: true */ p);
-        total += buf.length;
-        if (total > maxBytes) {
-          await rm(/* turbopackIgnore: true */ dir, { recursive: true, force: true });
-          return NextResponse.json({ error: "Файл слишком большой" }, { status: 400 });
-        }
-        parts.push(buf);
+      let assembled: { path: string; size: number };
+      try {
+        assembled = await assemblePartFiles(dir, chunkTotal, maxBytes);
+      } catch (e) {
+        await rm(/* turbopackIgnore: true */ dir, { recursive: true, force: true });
+        return NextResponse.json({ error: e instanceof Error ? e.message : "Файл слишком большой" }, { status: 400 });
       }
-      buffer = Buffer.concat(parts);
-      await rm(/* turbopackIgnore: true */ dir, { recursive: true, force: true });
+      try {
+        const saved = await saveUploadFromPath({
+          srcPath: assembled.path,
+          size: assembled.size,
+          originalName,
+          declaredMime: file.type || "application/pdf",
+          userId: session.user.id,
+          maxBytes,
+        });
+        await prisma.meetingFile.create({ data: { meetingId: id, fileId: saved.id, previewFileId: "" } });
+        if (needsGlbPreview(originalName)) {
+          const full = await readFile(/* turbopackIgnore: true */ assembled.path);
+          const previewFileId = await storeGlbPreview({
+            buffer: full,
+            originalName,
+            userId: session.user.id,
+            maxBytes,
+          });
+          if (previewFileId) {
+            await prisma.meetingFile.updateMany({ where: { meetingId: id, fileId: saved.id }, data: { previewFileId } });
+          }
+        }
+        return NextResponse.json({ id: saved.id, name: saved.originalName, mime: saved.mimeType, size: saved.size });
+      } finally {
+        await rm(/* turbopackIgnore: true */ dir, { recursive: true, force: true });
+      }
     }
     const saved = await saveUpload({
       buffer,

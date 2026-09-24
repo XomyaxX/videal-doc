@@ -1,4 +1,4 @@
-import { cp, mkdir, readdir, stat } from "fs/promises";
+import { cp, mkdir, readdir, stat, writeFile } from "fs/promises";
 import path from "path";
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
@@ -30,7 +30,7 @@ export async function GET() {
       const st = await stat(/* turbopackIgnore: true */ file);
       rows.push({ name, size: st.size, at: st.mtime.toISOString() });
     } catch {
-      // skip broken folder
+      /* skip broken folder */
     }
   }
   return NextResponse.json({ rows });
@@ -48,11 +48,19 @@ export async function POST() {
   const safe = dest.replace(/'/g, "''");
   try {
     await prisma.$executeRawUnsafe(`VACUUM INTO '${safe}'`);
-    const chatDir = path.join(/* turbopackIgnore: true */ fileRoot(), "chat");
-    await cp(/* turbopackIgnore: true */ chatDir, path.join(/* turbopackIgnore: true */ dir, "chat"), { recursive: true }).catch(() => {});
+    const filesSrc = fileRoot();
+    await cp(/* turbopackIgnore: true */ filesSrc, path.join(/* turbopackIgnore: true */ dir, "files"), { recursive: true });
+    const envSrc = path.join(/* turbopackIgnore: true */ process.cwd(), ".env");
+    try {
+      const { readFile } = await import("fs/promises");
+      const env = await readFile(envSrc);
+      await writeFile(/* turbopackIgnore: true */ path.join(dir, "env.backup"), env, { mode: 0o600 });
+    } catch {
+      /* .env may be missing locally */
+    }
   } catch (e) {
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Не удалось снять копию базы" },
+      { error: e instanceof Error ? e.message : "Не удалось снять копию" },
       { status: 500 },
     );
   }

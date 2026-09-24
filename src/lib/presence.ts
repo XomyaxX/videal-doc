@@ -22,12 +22,18 @@ export function isOfficeLanIp(ip: string) {
 }
 
 export function requestClientIp(req: NextRequest) {
-  const cf = req.headers.get("cf-connecting-ip")?.trim();
-  if (cf) return cf;
+  return requestTrustedIp(req);
+}
+
+/** IP closest to this server (nginx x-real-ip or last X-Forwarded-For hop). */
+export function requestTrustedIp(req: NextRequest) {
   const real = req.headers.get("x-real-ip")?.trim();
   if (real) return real;
-  const fwd = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "";
-  return fwd;
+  const fwd = (req.headers.get("x-forwarded-for") || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return fwd[fwd.length - 1] || "";
 }
 
 /** IP, как его видит офисный nginx, без Cloudflare. */
@@ -177,7 +183,7 @@ async function raiseFlag(opts: { userId: string; ymd: string; kind: string; minu
 export async function markIn(opts: { userId: string; ip: string; extraIps?: string[]; source: "manual" | "auto" | "lan" }) {
   const clock = officeClock();
   const extra = opts.extraIps || [];
-  const onSite = opts.source === "lan" ? true : await isOnSite(opts.ip, extra);
+  const onSite = opts.source === "lan" ? true : await isOnSite(opts.ip);
   if (!onSite) {
     await prisma.attendanceEvent.create({
       data: { userId: opts.userId, ymd: clock.ymd, kind: "deny_in", ip: opts.ip, detail: opts.source },
@@ -224,7 +230,7 @@ export async function markIn(opts: { userId: string; ip: string; extraIps?: stri
 export async function markOut(opts: { userId: string; ip: string; extraIps?: string[]; source: "manual" | "auto" | "lan" }) {
   const clock = officeClock();
   const extra = opts.extraIps || [];
-  const onSite = await isOnSite(opts.ip, extra);
+  const onSite = await isOnSite(opts.ip);
   if (!onSite) {
     await prisma.attendanceEvent.create({
       data: { userId: opts.userId, ymd: clock.ymd, kind: "deny_out", ip: opts.ip, detail: opts.source },
@@ -265,7 +271,7 @@ export async function markOut(opts: { userId: string; ip: string; extraIps?: str
 export async function presencePing(opts: { userId: string; ip: string; extraIps?: string[] }) {
   const clock = officeClock();
   const extra = opts.extraIps || [];
-  const onSite = await isOnSite(opts.ip, extra);
+  const onSite = await isOnSite(opts.ip);
   if (!onSite) return { onSite: false, autoIn: false };
   const leave = await onApprovedLeave(opts.userId, clock.ymd);
   let autoIn = false;
@@ -279,7 +285,7 @@ export async function presencePing(opts: { userId: string; ip: string; extraIps?
 export async function presenceSnapshot(userId: string, ip: string, extraIps: string[] = []) {
   const clock = officeClock();
   const [onSite, leave, day, station] = await Promise.all([
-    isOnSite(ip, extraIps),
+    isOnSite(ip),
     onApprovedLeave(userId, clock.ymd),
     prisma.attendanceDay.findUnique({ where: { userId_ymd: { userId, ymd: clock.ymd } } }),
     prisma.officeStation.findFirst({ where: { userId }, orderBy: { lastSeenAt: "desc" } }),
