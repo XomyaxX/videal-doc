@@ -42,7 +42,6 @@ export async function GET() {
   if (!session || !userCan(session.user, "admin.settings")) {
     return NextResponse.json({ error: "Нет права" }, { status: 403 });
   }
-  await stopIdentify();
   const stations = await prisma.officeStation.findMany({
     include: { user: { select: { lastName: true, firstName: true, middleName: true } } },
     orderBy: { lastSeenAt: "desc" },

@@ -1,11 +1,13 @@
 import { stat } from "fs/promises";
 import { NextRequest } from "next/server";
+import { gateScreenAllowed, gateScreenForbidden } from "@/lib/gate";
 import { SCREEN_CACHE, gateBgResponse, gateScreenFiles } from "@/lib/gate-bg";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
+  if (!(await gateScreenAllowed(req))) return gateScreenForbidden();
   const files = await gateScreenFiles();
   if (req.nextUrl.searchParams.get("probe") === "1") {
     return new Response(null, { status: files?.videoAbs ? 204 : 404, headers: { "Cache-Control": SCREEN_CACHE } });

@@ -56,7 +56,7 @@ export function GateBgCard({ initial }: { initial: Info }) {
       <h2 className="font-serif text-xl text-navy">Фон экрана на входе</h2>
       <p className="text-sm text-muted">
         Картинка, GIF или видео на весь экран телевизора. QR остаётся справа. Звук выключен, ролик крутится по кругу.
-        Подойдут MP4, WEBM, MOV, GIF, JPG, PNG и WEBP, до 512 МБ. Адрес экрана для пульта: videal-doc.ru/qr.
+        Подойдут MP4, WEBM, MOV, GIF, JPG, PNG и WEBP, до 512 МБ. Адрес экрана для пульта: http://192.168.1.51/qr.
       </p>
       {info.name ? <p className="text-sm text-navy">Сейчас: {info.name}</p> : <p className="text-sm text-muted">Фон ещё не загружен.</p>}
       {preview && info.kind === "image" ? (

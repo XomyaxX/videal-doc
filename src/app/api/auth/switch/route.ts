@@ -4,11 +4,12 @@ import { prisma } from "@/lib/prisma";
 import { sessionCookieOpts } from "@/lib/cookie";
 import { fullName } from "@/lib/names";
 import { rateLimit } from "@/lib/login-guard";
+import { requestTrustedIp } from "@/lib/presence";
 import { needs2fa } from "@/lib/privileges";
 import { parsePermissions } from "@/lib/permissions";
 
 export async function POST(req: NextRequest) {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const ip = requestTrustedIp(req) || "unknown";
   if (!rateLimit(`switch:${ip}`, 40, 15 * 60 * 1000)) {
     return NextResponse.json({ error: "Слишком часто" }, { status: 429 });
   }
@@ -47,6 +48,7 @@ export async function POST(req: NextRequest) {
     need2faSetup: privileged && !row.user.totpEnabled,
     need2fa: privileged && row.user.totpEnabled && !trusted,
   });
-  res.cookies.set(SESSION_COOKIE, row.token, sessionCookieOpts(req));
+  const daysLeft = Math.max(1, (row.expiresAt.getTime() - Date.now()) / 86400000);
+  res.cookies.set(SESSION_COOKIE, row.token, sessionCookieOpts(req, daysLeft));
   return res;
 }

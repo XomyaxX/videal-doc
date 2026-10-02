@@ -3,9 +3,10 @@ import { DEVICE_COOKIE } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { fullName } from "@/lib/names";
 import { rateLimit } from "@/lib/login-guard";
+import { requestTrustedIp } from "@/lib/presence";
 
 export async function GET(req: NextRequest) {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const ip = requestTrustedIp(req) || "unknown";
   if (!rateLimit(`accounts:${ip}`, 60, 15 * 60 * 1000)) {
     return NextResponse.json({ accounts: [] }, { status: 429 });
   }

@@ -211,7 +211,7 @@ export async function createSession(
       rememberDevice,
     },
   });
-  return token;
+  return { token, days };
 }
 
 export async function loginWithPassword(
@@ -232,10 +232,10 @@ export async function loginWithPassword(
   const privileged = needs2fa(mapped);
   const trusted = privileged && (await deviceTrusted(user.id, deviceId));
   const totpOk = !privileged || trusted;
-  const token = await createSession(user.id, ip, userAgent, deviceId, totpOk, remember);
+  const session = await createSession(user.id, ip, userAgent, deviceId, totpOk, remember);
   mapped.totpOk = totpOk;
   if (trusted) await trustDevice(user.id, deviceId, userAgent);
-  return { token, user: mapped };
+  return { token: session.token, days: session.days, user: mapped };
 }
 
 export async function changePassword(userId: string, current: string, next: string, keepToken?: string) {

@@ -118,6 +118,22 @@ function rasterNeedsThumb(file: LibraryFileCard) {
 
 function FileView({ file, allowDownload }: { file: LibraryFileCard; allowDownload: boolean }) {
   const dl = allowDownload ? downloadHref(file.fileUrl) : "";
+  if (!allowDownload) {
+    if (file.thumbUrl) {
+      return (
+        <div className="space-y-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={file.thumbUrl} alt={file.originalName} className="max-h-[85vh] w-full rounded-xl bg-white object-contain" />
+          <p className="text-center text-sm text-muted">Скачивание закрыто</p>
+        </div>
+      );
+    }
+    return (
+      <div className="rounded-xl border border-dashed border-line bg-white px-6 py-12 text-center">
+        <p className="font-serif text-xl text-navy">Скачивание закрыто</p>
+      </div>
+    );
+  }
   if (file.preview === "image") {
     const src = rasterNeedsThumb(file) ? file.thumbUrl || file.fileUrl : file.fileUrl;
     return (

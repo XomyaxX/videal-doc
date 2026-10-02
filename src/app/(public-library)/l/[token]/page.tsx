@@ -4,26 +4,30 @@ import { LibraryViewer, type LibraryCard } from "@/components/LibraryPreview";
 import { findLibraryShare, serializeLibrary, shareBrowse } from "@/lib/library";
 import { LibraryDesk } from "@/app/(office)/library/LibraryDesk";
 
-function publicCard(token: string, row: Parameters<typeof serializeLibrary>[0]): LibraryCard {
+function publicCard(
+  token: string,
+  row: Parameters<typeof serializeLibrary>[0],
+  download: boolean,
+): LibraryCard {
   const item = serializeLibrary(row) as LibraryCard;
   item.href = `/l/${token}${row.id ? `?p=${row.id}` : ""}`;
   item.uncPath = "";
   if (item.files) {
     item.files = item.files.map((f) => {
-      const fileUrl = `/api/l/${token}/file/${f.id}`;
+      const href = `/api/l/${token}/file/${f.id}`;
       return {
         ...f,
         uncPath: "",
-        fileUrl,
+        fileUrl: download ? href : "",
         thumbUrl:
-          f.preview === "image" || f.preview === "video" || f.preview === "pdf" ? `${fileUrl}?poster=1` : "",
+          f.preview === "image" || f.preview === "video" || f.preview === "pdf" ? `${href}?poster=1` : "",
         previewUrl: "",
       };
     });
   }
-  if (item.fileUrl && !item.isFolder) {
+  if (!item.isFolder) {
     const first = item.files?.[0];
-    item.fileUrl = first?.fileUrl || item.fileUrl;
+    item.fileUrl = download ? first?.fileUrl || item.fileUrl : "";
     item.thumbUrl = first?.thumbUrl || "";
   }
   return item;
@@ -45,7 +49,8 @@ export default async function PublicLibraryPage({
   if (!browse) notFound();
   const { current, crumbs, children } = browse;
   const isFolder = current.kind === "folder";
-  const items = children.map((row) => publicCard(token, row));
+  const download = root.shareDownload !== false;
+  const items = children.map((row) => publicCard(token, row, download));
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-5 pb-10 md:py-10">
@@ -60,7 +65,7 @@ export default async function PublicLibraryPage({
           kind=""
           guest={{
             token,
-            download: root.shareDownload !== false,
+            download,
             edit: Boolean(root.shareEdit),
             create: Boolean(root.shareCreate),
             rootId: root.id,
@@ -70,7 +75,7 @@ export default async function PublicLibraryPage({
         <>
           <h1 className="mt-2 font-serif text-3xl text-navy">{current.title}</h1>
           <Card className="mt-6 min-w-0 overflow-hidden">
-            <LibraryViewer item={publicCard(token, current)} allowDownload={root.shareDownload !== false} />
+            <LibraryViewer item={publicCard(token, current, download)} allowDownload={download} />
           </Card>
         </>
       )}

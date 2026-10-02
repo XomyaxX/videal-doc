@@ -1,17 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DEVICE_COOKIE, loginWithPassword, SESSION_COOKIE } from "@/lib/auth";
-import { audit, auditRequestIp, isRemoteRole } from "@/lib/audit";
+import { audit, isRemoteRole } from "@/lib/audit";
 import { deviceCookieOpts, sessionCookieOpts } from "@/lib/cookie";
 import { loginBlocked, loginFailed, loginOk } from "@/lib/login-guard";
 import { randomToken } from "@/lib/password";
 import { fullName } from "@/lib/names";
 import { needs2fa } from "@/lib/privileges";
+import { requestTrustedIp } from "@/lib/presence";
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   const login = String(body?.login || "");
   const password = String(body?.password || "");
-  const ip = auditRequestIp(req) || req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "";
+  const ip = requestTrustedIp(req) || "unknown";
   const ua = req.headers.get("user-agent") || "";
   const blocked = loginBlocked(ip, login);
   if (blocked) return NextResponse.json({ error: blocked }, { status: 429 });
@@ -45,7 +46,7 @@ export async function POST(req: NextRequest) {
     need2faSetup: privileged && !result.user.totpEnabled,
     need2fa: privileged && result.user.totpEnabled && !result.user.totpOk,
   });
-  res.cookies.set(SESSION_COOKIE, result.token, sessionCookieOpts(req));
+  res.cookies.set(SESSION_COOKIE, result.token, sessionCookieOpts(req, result.days));
   res.cookies.set(DEVICE_COOKIE, device, deviceCookieOpts(req));
   return res;
 }

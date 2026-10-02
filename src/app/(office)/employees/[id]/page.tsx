@@ -52,10 +52,12 @@ export default async function EmployeePage({ params }: { params: Promise<{ id: s
     : [[], [], [], [], []];
 
   const archiveOk = canViewArchive(user, person);
-  const stations = await prisma.officeStation.findMany({
-    where: { userId: id },
-    orderBy: { lastSeenAt: "desc" },
-  });
+  const stations = manage
+    ? await prisma.officeStation.findMany({
+        where: { userId: id },
+        orderBy: { lastSeenAt: "desc" },
+      })
+    : [];
 
   return (
     <div>
@@ -144,19 +146,6 @@ export default async function EmployeePage({ params }: { params: Promise<{ id: s
           </dl>
         </Card>
       )}
-      {!manage ? (
-        <EmployeeStations
-          canEdit={false}
-          rows={stations.map((s) => ({
-            id: s.id,
-            mac: s.mac,
-            ipv4: s.ipv4,
-            label: s.label,
-            online: stationOnline(s.lastSeenAt),
-            lastSeenAt: s.lastSeenAt?.toISOString() || null,
-          }))}
-        />
-      ) : null}
     </div>
   );
 }

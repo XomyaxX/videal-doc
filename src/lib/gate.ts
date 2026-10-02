@@ -1,11 +1,13 @@
 import { randomBytes, timingSafeEqual } from "crypto";
 import QRCode from "qrcode";
-import type { NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "./prisma";
 import { requestOrigin } from "./origin";
 import { gateBgMeta } from "./gate-bg";
+import { isOfficeLanIp, isOnSite, requestTrustedIp } from "./presence";
 
-export const GATE_SCREEN_URL = "https://videal-doc.ru/qr";
+/** TV should open the LAN address so the live QR is not on the public internet. */
+export const GATE_SCREEN_URL = "http://192.168.1.51/qr";
 
 export const GATE_TTL_MS = 2 * 60 * 60 * 1000;
 
@@ -52,6 +54,32 @@ export async function gateKeyOk(key: string) {
   });
   if (!row?.gateKey || !sameSecret(row.gateKey, key.trim())) return false;
   return true;
+}
+
+function extraGateIps() {
+  return (process.env.GATE_SCREEN_IPS || "")
+    .split(/[\s,]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/** Live QR and TV media stay on the office LAN, saved office nets, or ?k= kiosk key. */
+export async function gateScreenAllowed(req: NextRequest) {
+  const key = req.nextUrl.searchParams.get("k") || "";
+  if (key && (await gateKeyOk(key))) return true;
+  const ip = requestTrustedIp(req);
+  if (ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1") return true;
+  if (isOfficeLanIp(ip)) return true;
+  if (extraGateIps().includes(ip)) return true;
+  if (ip && (await isOnSite(ip))) return true;
+  return false;
+}
+
+export function gateScreenForbidden() {
+  return new NextResponse("Экран доступен только в офисе", {
+    status: 403,
+    headers: { "Cache-Control": "no-store" },
+  });
 }
 
 export async function currentGate(key: string) {

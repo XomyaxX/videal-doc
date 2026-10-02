@@ -233,7 +233,7 @@ export default async function ControlPage({
     <div>
       <PageHeader
         title="Контроль"
-        subtitle="Отдельные разделы: кто что делает, проверки, просрочки, табель. На телевизоре: videal-doc.ru/qr"
+        subtitle="Отдельные разделы: кто что делает, проверки, просрочки, табель. На телевизоре: http://192.168.1.51/qr"
         actions={
           <div className="flex flex-wrap gap-2">
             <Button href={`/api/duty/pdf?kind=journal&week=${from}`} variant="secondary">

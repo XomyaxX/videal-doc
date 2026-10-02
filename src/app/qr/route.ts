@@ -1,3 +1,5 @@
+import type { NextRequest } from "next/server";
+import { gateScreenAllowed, gateScreenForbidden } from "@/lib/gate";
 import { gateScreenFiles } from "@/lib/gate-bg";
 
 export const dynamic = "force-dynamic";
@@ -11,11 +13,23 @@ function clock() {
   }).format(new Date());
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  if (!(await gateScreenAllowed(req))) return gateScreenForbidden();
+  const rawKey = req.nextUrl.searchParams.get("k") || "";
+  const k = /^[\w.-]{8,80}$/.test(rawKey) ? rawKey : "";
+  const withKey = (path: string) => {
+    if (!k) return path;
+    return path.includes("?") ? `${path}&k=${encodeURIComponent(k)}` : `${path}?k=${encodeURIComponent(k)}`;
+  };
   const screen = await gateScreenFiles().catch(() => null);
   const v = screen?.v || 0;
-  const posterSrc = screen?.posterAbs ? `/api/qr/poster?v=${v}` : "";
-  const videoSrc = screen?.videoAbs ? `/api/qr/screen?v=${v}` : "";
+  const posterSrc = screen?.posterAbs ? withKey(`/api/qr/poster?v=${v}`) : "";
+  const videoSrc = screen?.videoAbs ? withKey(`/api/qr/screen?v=${v}`) : "";
+  const qrSrc = withKey("/api/qr/image");
+  const qrJoin = qrSrc.includes("?") ? "&" : "?";
+  const probeSrc = withKey("/api/qr/screen?probe=1");
+  const screenSrc = withKey("/api/qr/screen");
+  const screenJoin = screenSrc.includes("?") ? "&" : "?";
   const html = `<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -43,7 +57,7 @@ html, body { margin: 0; height: 100%; background: #16324f; }
 <section class="vd-gate-side">
 <p class="vd-gate-clock" id="c">${clock()}</p>
 <p class="vd-gate-caption">Отсканируйте, чтобы отметить приход или уход</p>
-<div class="vd-gate-qrbox"><img id="q" src="/api/qr/image" alt="QR для отметки прихода и ухода"></div>
+<div class="vd-gate-qrbox"><img id="q" src="${qrSrc}" alt="QR для отметки прихода и ухода"></div>
 <p class="vd-gate-note">Код меняется каждые два часа. Время — Омск.</p>
 </section>
 </main>
@@ -66,9 +80,11 @@ function tick(){
 }
 tick();
 setInterval(tick,1000);
+var qrBase=${JSON.stringify(qrSrc)};
+var qrJoin=${JSON.stringify(qrJoin)};
 setInterval(function(){
   var img=document.getElementById("q");
-  if(img) img.src="/api/qr/image?t="+new Date().getTime();
+  if(img) img.src=qrBase+qrJoin+"t="+new Date().getTime();
 },120000);
 function revive(v){
   if(!v||!v.paused) return;
@@ -108,11 +124,11 @@ function arm(){
     n+=1;
     if(n>24){ clearInterval(t); return; }
     var x=new XMLHttpRequest();
-    x.open("GET","/api/qr/screen?probe=1",true);
+    x.open("GET",${JSON.stringify(probeSrc)},true);
     x.onload=function(){
       if(x.status===204){
         clearInterval(t);
-        startVideo("/api/qr/screen?v="+new Date().getTime());
+        startVideo(${JSON.stringify(screenSrc)}+${JSON.stringify(screenJoin)}+"v="+new Date().getTime());
       }
     };
     x.send();
@@ -160,6 +176,7 @@ document.addEventListener("visibilitychange", function(){
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store",
+      "X-Robots-Tag": "noindex, nofollow",
     },
   });
 }

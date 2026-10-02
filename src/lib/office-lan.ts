@@ -206,7 +206,8 @@ export async function applyLanPresence() {
 }
 
 export function lanBindToken(userId: string) {
-  const secret = process.env.SESSION_SECRET || "videal-lan";
+  const secret = process.env.SESSION_SECRET || "";
+  if (secret.length < 16 || !userId) return "";
   return createHmac("sha256", secret).update(`lan:${userId}`).digest("hex").slice(0, 20);
 }
 

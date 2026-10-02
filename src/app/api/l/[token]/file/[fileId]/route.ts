@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { collectShareFiles, findLibraryShare, libraryAbs, previewMode, serveLibraryFile } from "@/lib/library";
 import { serveMediaThumb } from "@/lib/file-thumb";
 import { rateLimit } from "@/lib/login-guard";
+import { requestTrustedIp } from "@/lib/presence";
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ token: string; fileId: string }> }) {
-  const ip = req.headers.get("x-real-ip") || req.headers.get("x-forwarded-for") || "share";
+  const ip = requestTrustedIp(req) || "share";
   if (!rateLimit(`libshare:${ip}`, 120, 60_000)) {
     return new NextResponse("Слишком часто", { status: 429 });
   }
@@ -23,7 +24,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ token: stri
     return poster;
   }
   const asDownload = req.nextUrl.searchParams.get("dl") === "1";
-  if (asDownload && item.shareDownload === false) {
+  if (item.shareDownload === false) {
     return new NextResponse("Скачивание закрыто", { status: 403 });
   }
   const inline = !asDownload && mode !== "none";
