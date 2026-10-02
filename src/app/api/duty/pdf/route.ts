@@ -9,6 +9,7 @@ const DAY_SHORT = ["", "Пн", "Вт", "Ср", "Чт", "Пт"];
 export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return new NextResponse("Нужно войти", { status: 401 });
+  if (session.user.roleCode === "remote") return new NextResponse("Нет права", { status: 403 });
   const kind = req.nextUrl.searchParams.get("kind") || "trash";
   const now = officeYmd();
   if (kind === "journal") {

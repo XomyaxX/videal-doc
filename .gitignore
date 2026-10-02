@@ -54,6 +54,7 @@ deploy/*.py
 prisma/add-babkina.ts
 prisma/add-urokpaev.ts
 prisma/add-matveeva-lugin.ts
+prisma/add-mitrokhina.ts
 prisma/upsert-sublead.ts
 
 # vercel
@@ -63,4 +64,4 @@ prisma/upsert-sublead.ts
 *.tsbuildinfo
 next-env.d.ts
 
-docs/videal-edo-справка.md
+docs/videal-edo-пїЅпїЅпїЅпїЅпїЅпїЅпїЅ.md

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DEVICE_COOKIE, loginWithPassword, SESSION_COOKIE } from "@/lib/auth";
-import { audit } from "@/lib/audit";
+import { audit, auditRequestIp, isRemoteRole } from "@/lib/audit";
 import { deviceCookieOpts, sessionCookieOpts } from "@/lib/cookie";
 import { loginBlocked, loginFailed, loginOk } from "@/lib/login-guard";
 import { randomToken } from "@/lib/password";
@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   const login = String(body?.login || "");
   const password = String(body?.password || "");
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "";
+  const ip = auditRequestIp(req) || req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "";
   const ua = req.headers.get("user-agent") || "";
   const blocked = loginBlocked(ip, login);
   if (blocked) return NextResponse.json({ error: blocked }, { status: 429 });
@@ -26,7 +26,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: result.error }, { status: 401 });
   }
   loginOk(ip, login);
-  await audit({ userId: result.user.id, action: "login", entity: "session", ip });
+  await audit({
+    userId: result.user.id,
+    action: "login",
+    entity: "session",
+    ip,
+    details: isRemoteRole(result.user.roleCode) ? ua.slice(0, 400) : "",
+  });
   const privileged = needs2fa(result.user);
   const res = NextResponse.json({
     account: {

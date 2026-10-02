@@ -29,6 +29,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       pcDisk: String(body.pcDisk || "").trim(),
       pcMb: String(body.pcMb || "").trim(),
       note: String(body.note || "").trim(),
+      status: body.status === "question" ? "question" : "ok",
     },
   });
   await audit({ userId: session.user.id, action: "inventory.update", entity: "inventory", entityId: id });

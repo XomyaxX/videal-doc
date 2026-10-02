@@ -37,6 +37,7 @@ async function main() {
     { code: "manager", name: "Руководитель", description: "Рассылки и согласование" },
     { code: "sublead", name: "Субруководитель", description: "Назначает в отделе, не утверждает задачи руководства и свои" },
     { code: "employee", name: "Сотрудник", description: "Ознакомление и свои документы" },
+    { code: "remote", name: "Дистанционный", description: "Работа вне офиса: свои задачи и документы" },
   ];
   for (const r of roles) {
     const preset = ROLE_PRESETS[r.code] ?? [];

@@ -9,6 +9,7 @@ import { ResetPassword } from "./ResetPassword";
 import { EmployeeStations } from "./EmployeeStations";
 import { stationOnline } from "@/lib/office-lan";
 import { WriteChatButton } from "../WriteChatButton";
+
 import { canViewArchive } from "@/lib/archive-access";
 import { USER_SAFE_SELECT } from "@/lib/user-public";
 
@@ -67,6 +68,11 @@ export default async function EmployeePage({ params }: { params: Promise<{ id: s
         actions={
           <span className="flex flex-wrap gap-2">
             {person.id !== user.id ? <WriteChatButton userId={person.id} className="rounded-xl border border-line bg-white px-4 py-2.5 text-[15px] font-semibold text-navy" /> : null}
+            {manage ? (
+              <Button href={`/employees/${person.id}/nda`} variant="secondary">
+                Соглашение
+              </Button>
+            ) : null}
             {archiveOk ? (
               <Button href={`/archive?user=${person.id}`} variant="secondary">
                 Документы сотрудника

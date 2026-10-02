@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { previewMode, type PreviewKind } from "@/lib/library-kinds";
+import { DocxPreview } from "@/components/DocxPreview";
 
 export type TaskFileChip = {
   id: string;
@@ -21,7 +22,7 @@ function rank(file: TaskFileChip) {
   const k = kindOf(file);
   if (k === "video") return 0;
   if (k === "image") return 1;
-  if (k === "pdf") return 2;
+  if (k === "pdf" || k === "docx") return 2;
   return 3;
 }
 
@@ -53,6 +54,8 @@ export function TaskPreview({ files }: { files: TaskFileChip[] }) {
           <img src={src} alt={current?.originalName || ""} className="max-h-[420px] w-full object-contain bg-[#111]" />
         ) : kind === "pdf" ? (
           <iframe title={current?.originalName || "PDF"} src={src} className="h-[420px] w-full bg-white" />
+        ) : kind === "docx" ? (
+          <DocxPreview src={src} className="h-[420px] bg-white" />
         ) : (
           <div className="px-4 py-10 text-center">
             <a href={src} className="font-semibold text-gold underline">

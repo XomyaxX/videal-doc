@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { audit } from "@/lib/audit";
-import { canManageLibrary, canViewLibrary, previewMode, readLibraryBytes, removeLibraryFile } from "@/lib/library";
+import { audit, auditRemote, auditRequestIp } from "@/lib/audit";
+import { serveMediaThumb } from "@/lib/file-thumb";
+import {
+  canManageLibrary,
+  canViewLibrary,
+  libraryAbs,
+  libraryItemVisible,
+  previewMode,
+  removeLibraryFile,
+  serveLibraryFile,
+} from "@/lib/library";
 
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string; fileId: string }> }) {
   const session = await getSession();
@@ -15,6 +24,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     include: { files: { orderBy: { sortOrder: "asc" } } },
   });
   if (!item) return new NextResponse("Нет файла", { status: 404 });
+  if (!(await libraryItemVisible(session.user, id))) return new NextResponse("Нет файла", { status: 404 });
   const row =
     item.files.find((f) => f.id === fileId) ||
     (fileId === item.id || fileId === "cover"
@@ -35,17 +45,30 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
       });
     }
   }
-  const file = await readLibraryBytes(row);
-  if (!file) return new NextResponse("Файл не найден на диске", { status: 404 });
   const mode = previewMode(row);
   const inline = mode !== "none" || asPreview;
-  return new NextResponse(new Uint8Array(file.buffer), {
-    headers: {
-      "Content-Type": file.mime || "application/octet-stream",
-      "Content-Disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(file.name)}`,
-      "Cache-Control": "private, max-age=3600",
-    },
-  });
+  const poster = _req.nextUrl.searchParams.get("poster") === "1";
+  if (poster) {
+    const loc = await libraryAbs(row);
+    if (!loc) return new NextResponse("Нет", { status: 404 });
+    const thumb = await serveMediaThumb(loc.abs, loc.name, loc.mime);
+    if (!thumb) return new NextResponse("Нет превью", { status: 404 });
+    return thumb;
+  }
+  const res = await serveLibraryFile(row, _req, { inline });
+  if (!res) return new NextResponse("Файл не найден на диске", { status: 404 });
+  if (!poster) {
+    const name = "originalName" in row && row.originalName ? String(row.originalName) : item.title;
+    await auditRemote({
+      user: session.user,
+      action: asPreview || inline ? "library.file.view" : "library.file.download",
+      entity: "library",
+      entityId: id,
+      details: name,
+      ip: auditRequestIp(_req),
+    });
+  }
+  return res;
 }
 
 export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: string; fileId: string }> }) {

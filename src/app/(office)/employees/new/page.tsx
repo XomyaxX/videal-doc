@@ -15,7 +15,7 @@ export default async function NewEmployeePage() {
   ]);
   return (
     <div>
-      <PageHeader title="Новый сотрудник" subtitle="Уровень доступа назначаете вы" />
+      <PageHeader title="Новый сотрудник" subtitle="Логин соберётся из фамилии и покажется вместе с временным паролем" />
       <EmployeeForm
         roles={roles}
         departments={departments}

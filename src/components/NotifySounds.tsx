@@ -37,9 +37,14 @@ export function NotifySounds({ enabled }: { enabled: boolean }) {
 
   useEffect(() => {
     let stop = false;
+    let paused = false;
+    const onHeavy = (e: Event) => {
+      paused = Boolean((e as CustomEvent).detail);
+    };
+    window.addEventListener("vd-heavy-download", onHeavy);
 
     async function tick(play: boolean) {
-      if (stop) return;
+      if (stop || paused) return;
       const after = sessionStorage.getItem(CURSOR_KEY) || "";
       const q = after ? `?after=${encodeURIComponent(after)}` : "";
       const res = await fetch(`/api/notifications/since${q}`).catch(() => null);
@@ -66,6 +71,7 @@ export function NotifySounds({ enabled }: { enabled: boolean }) {
     return () => {
       stop = true;
       clearInterval(t);
+      window.removeEventListener("vd-heavy-download", onHeavy);
     };
   }, []);
 

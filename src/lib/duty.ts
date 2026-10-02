@@ -3,6 +3,7 @@ import { officeYmd } from "./dates";
 import { inferGender } from "./gender";
 import { fullName } from "./names";
 import { notify } from "./notify";
+import { userCan, type SessionUser } from "./types";
 
 export const DUTY = {
   trash: { kind: "trash" as const, title: "Вынос мусора", gender: "m" as const, line: "выносите мусор" },
@@ -12,7 +13,13 @@ export const DUTY = {
 const WEEKDAY_RU = ["", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"];
 const WEEKDAY_SHORT = ["", "пн", "вт", "ср", "чт", "пт", "сб", "вс"];
 
-function isDutyExempt(p: {
+function isSublead(p: { role: { code: string }; position: { name: string } | null }) {
+  if (p.role.code === "sublead") return true;
+  const pos = (p.position?.name || "").toLocaleLowerCase("ru");
+  return pos.includes("субруковод") || pos.includes("суб-руковод");
+}
+
+function isJournalExempt(p: {
   login: string;
   lastName: string;
   firstName: string;
@@ -20,13 +27,34 @@ function isDutyExempt(p: {
   department: { name: string } | null;
   position: { name: string } | null;
 }) {
-  if (["manager", "admin", "superadmin", "sublead", "aho"].includes(p.role.code)) return true;
+  if (isSublead(p)) return false;
+  if (["manager", "admin", "superadmin", "aho", "remote"].includes(p.role.code)) return true;
   if ((p.login || "").toLowerCase() === "balova") return true;
   if (p.lastName === "Балова" && p.firstName === "Ирина") return true;
   const n = (p.department?.name || "").toLowerCase();
   if (n.includes("хозяйствен") || n === "ахо" || n.includes("кадр")) return true;
   const pos = (p.position?.name || "").toLowerCase();
   return pos.includes("руководител") || pos.includes("директор");
+}
+
+function isCleanExempt(p: { lastName: string; firstName: string; middleName?: string | null }) {
+  return p.lastName === "Беляева" && p.firstName === "Ксения";
+}
+
+function isDutyExempt(
+  p: {
+    login: string;
+    lastName: string;
+    firstName: string;
+    middleName?: string | null;
+    role: { code: string };
+    department: { name: string } | null;
+    position: { name: string } | null;
+  },
+  gender?: "m" | "f",
+) {
+  if (gender === "f" && isCleanExempt(p)) return true;
+  return isJournalExempt(p);
 }
 
 export function mondayOfYmd(ymd: string) {
@@ -97,10 +125,20 @@ function personGender(p: { gender: string; login: string; firstName: string; mid
 }
 
 export async function officeStaff(): Promise<DutyPerson[]> {
-  const [men, women] = await Promise.all([dutyRoster("m"), dutyRoster("f")]);
-  return [...men, ...women].sort(
-    (a, b) => a.lastName.localeCompare(b.lastName, "ru") || a.firstName.localeCompare(b.firstName, "ru"),
-  );
+  const people = await prisma.user.findMany({
+    where: { deletedAt: null, status: "active" },
+    include: { role: true, department: true, position: true },
+    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+  });
+  return people
+    .filter((p) => !isJournalExempt(p))
+    .map((p) => ({
+      id: p.id,
+      name: fullName(p),
+      lastName: p.lastName,
+      firstName: p.firstName,
+      photoFileId: p.photoFileId,
+    }));
 }
 
 export async function dutyRoster(gender: "m" | "f"): Promise<DutyPerson[]> {
@@ -110,7 +148,7 @@ export async function dutyRoster(gender: "m" | "f"): Promise<DutyPerson[]> {
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
   });
   return people
-    .filter((p) => !isDutyExempt(p) && personGender(p) === gender)
+    .filter((p) => !isDutyExempt(p, gender) && personGender(p) === gender)
     .map((p) => ({
       id: p.id,
       name: fullName(p),
@@ -126,6 +164,10 @@ export function pickByWeek(roster: DutyPerson[], ymd: string) {
 }
 
 export type DutyOverrides = Record<string, { clean?: string[]; trash?: string }>;
+
+export function canEditDuty(user: SessionUser) {
+  return user.roleCode === "admin" || user.roleCode === "superadmin" || userCan(user, "admin.settings");
+}
 
 async function loadDutyOverrides(): Promise<DutyOverrides> {
   const s = await prisma.appSettings.findUnique({ where: { id: "default" }, select: { dutyOverrides: true } });
@@ -181,6 +223,49 @@ export function pickCleanPair(roster: DutyPerson[], ymd: string, overrides: Duty
 
 export function pickDuty(roster: DutyPerson[], ymd: string) {
   return pickByWeek(roster, ymd);
+}
+
+export async function setDutyOverride(opts: { ymd: string; kind: "trash" | "clean"; ids: string[] }) {
+  const ymd = opts.ymd.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) throw new Error("Неверная дата");
+  const [men, women, overrides] = await Promise.all([dutyRoster("m"), dutyRoster("f"), loadDutyOverrides()]);
+  const day = { ...(overrides[ymd] || {}) };
+  const ids = [...new Set(opts.ids.filter(Boolean))];
+
+  if (opts.kind === "trash") {
+    if (!isWorkday(ymd)) throw new Error("Мусор только в рабочий день");
+    if (!ids.length) delete day.trash;
+    else {
+      if (ids.length !== 1) throw new Error("На мусор — один человек");
+      if (!men.some((p) => p.id === ids[0])) throw new Error("Этот сотрудник не в мужской ротации");
+      const natural = pickByWorkday(men, ymd, {});
+      if (natural?.id === ids[0]) delete day.trash;
+      else day.trash = ids[0];
+    }
+  } else {
+    if (!isCleanDay(ymd)) throw new Error("Уборка только во вторник и пятницу");
+    if (!ids.length) delete day.clean;
+    else {
+      if (ids.length > 2) throw new Error("На уборку — не больше двух");
+      if (ids.some((id) => !women.some((p) => p.id === id))) throw new Error("Этот сотрудник не в женской ротации");
+      const natural = pickCleanPair(women, ymd, {});
+      const same =
+        natural.length === ids.length &&
+        natural.every((p) => ids.includes(p.id)) &&
+        ids.every((id) => natural.some((p) => p.id === id));
+      if (same) delete day.clean;
+      else day.clean = ids;
+    }
+  }
+
+  if (!day.trash && !day.clean?.length) delete overrides[ymd];
+  else overrides[ymd] = day;
+
+  await prisma.appSettings.update({
+    where: { id: "default" },
+    data: { dutyOverrides: JSON.stringify(overrides) },
+  });
+  return overrides;
 }
 
 export async function dutyForWeek(ymd = officeYmd()) {

@@ -3,8 +3,8 @@ import type { NextConfig } from "next";
 const nextConfig = {
   serverExternalPackages: ["@prisma/client", "@react-pdf/renderer", "jimp", "exceljs", "nodemailer", "web-push"],
   experimental: {
-    proxyClientMaxBodySize: "512mb",
-    serverActions: { bodySizeLimit: "512mb" },
+    proxyClientMaxBodySize: "1024mb",
+    serverActions: { bodySizeLimit: "1024mb" },
   },
   async headers() {
     return [

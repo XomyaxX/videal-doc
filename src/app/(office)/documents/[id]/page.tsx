@@ -10,6 +10,7 @@ import { Viewer } from "./Viewer";
 import { USER_SAFE_SELECT } from "@/lib/user-public";
 import { VersionForm } from "./VersionForm";
 import { ensureDocumentRevisions } from "@/lib/document-revisions";
+import { previewMode } from "@/lib/library-kinds";
 
 export default async function DocumentPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
@@ -52,8 +53,8 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
 
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <Card id="doc-viewer" className="overflow-hidden p-3">
-          {file?.mimeType === "application/pdf" || file?.mimeType.startsWith("image/") ? (
-            <Viewer fileId={doc.originalFileId} />
+          {file && previewMode(file) !== "none" ? (
+            <Viewer fileId={doc.originalFileId} kind={previewMode(file)} />
           ) : (
             <div className="p-8 text-center">
               <p>Этот файл лучше открыть скачиванием.</p>

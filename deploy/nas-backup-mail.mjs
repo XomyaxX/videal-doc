@@ -28,6 +28,33 @@ function parseArgs(argv) {
   return out;
 }
 
+function splitAddresses(raw) {
+  return [...new Set(
+    String(raw || "")
+      .split(/[,;\s]+/)
+      .map((s) => s.trim())
+      .filter((s) => s.includes("@")),
+  )];
+}
+
+function confNotify() {
+  const path = process.env.NAS_BACKUP_CONF || "/etc/nas-backup.conf";
+  if (!existsSync(path)) return "";
+  try {
+    const line = readFileSync(path, "utf8")
+      .split(/\r?\n/)
+      .find((l) => l.startsWith("NOTIFY_EMAIL="));
+    if (!line) return "";
+    let v = line.slice("NOTIFY_EMAIL=".length).trim();
+    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+      v = v.slice(1, -1);
+    }
+    return v;
+  } catch {
+    return "";
+  }
+}
+
 function loadEnv(path) {
   const out = {};
   if (!existsSync(path)) return out;
@@ -140,12 +167,12 @@ function accounts(env) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const to = (args.to || process.env.NOTIFY_EMAIL || "").trim();
+  const toList = splitAddresses(`${args.to || ""},${process.env.NOTIFY_EMAIL || ""},${confNotify()}`);
   const subject = (args.subject || "").trim();
   let body = args.body || "";
   if (args.bodyFile) body = readFileSync(args.bodyFile, "utf8");
   if (!body) body = readFileSync(0, "utf8");
-  if (!to.includes("@")) die("need --to");
+  if (!toList.length) die("need --to");
   if (!subject) die("need --subject");
   if (!body.trim()) die("empty body");
 
@@ -155,24 +182,33 @@ async function main() {
 
   const require = createRequire(`${APP}/package.json`);
   const nodemailer = require("nodemailer");
-  const errors = [];
-  for (const acc of list) {
-    try {
-      const transport = nodemailer.createTransport({
-        host: acc.host,
-        port: acc.port,
-        secure: acc.port === 465,
-        auth: { user: acc.user, pass: acc.password },
-      });
-      await transport.sendMail({ from: acc.from, to, subject, text: body });
-      console.log(`sent to ${to} via ${acc.label}`);
-      return;
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      errors.push(`${acc.label}: ${msg}`);
+  const sent = [];
+  const failed = [];
+  for (const rcpt of toList) {
+    const errors = [];
+    let ok = false;
+    for (const acc of list) {
+      try {
+        const transport = nodemailer.createTransport({
+          host: acc.host,
+          port: acc.port,
+          secure: acc.port === 465,
+          auth: { user: acc.user, pass: acc.password },
+        });
+        await transport.sendMail({ from: acc.from, to: rcpt, subject, text: body });
+        console.log(`sent to ${rcpt} via ${acc.label}`);
+        sent.push(rcpt);
+        ok = true;
+        break;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        errors.push(`${acc.label}: ${msg}`);
+      }
     }
+    if (!ok) failed.push(`${rcpt}: ${errors.join(" | ")}`);
   }
-  die(errors.join(" | "));
+  if (failed.length) console.error(failed.join(" || "));
+  if (!sent.length) die(failed.join(" || ") || "send failed");
 }
 
 main().catch((e) => die(e instanceof Error ? e.message : String(e)));

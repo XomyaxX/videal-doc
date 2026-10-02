@@ -27,6 +27,8 @@ export const PERMISSIONS = [
   { code: "archive.view_all", name: "Архивы сотрудников" },
   { code: "presence.review", name: "Контроль прихода и ухода" },
   { code: "inventory.manage", name: "Инвентарь (правка АХО)" },
+  { code: "data.view", name: "Раздел Data" },
+  { code: "data.work", name: "Писать в папку Data" },
 ] as const;
 
 export type PermissionCode = (typeof PERMISSIONS)[number]["code"];
@@ -64,6 +66,8 @@ export const ROLE_PRESETS: Record<string, PermissionCode[]> = {
     "archive.view_all",
     "presence.review",
     "inventory.manage",
+    "data.view",
+    "data.work",
   ],
   aho: [
     "docs.view_own",
@@ -110,6 +114,8 @@ export const ROLE_PRESETS: Record<string, PermissionCode[]> = {
     "archive.view",
     "archive.view_all",
     "presence.review",
+    "data.view",
+    "data.work",
   ],
   employee: [
     "docs.view_own",
@@ -120,6 +126,7 @@ export const ROLE_PRESETS: Record<string, PermissionCode[]> = {
     "requests.create",
     "hrdocs.create",
     "archive.view",
+    "data.view",
   ],
   sublead: [
     "docs.view_own",
@@ -133,6 +140,19 @@ export const ROLE_PRESETS: Record<string, PermissionCode[]> = {
     "requests.create",
     "hrdocs.create",
     "archive.view",
+    "data.view",
+    "data.work",
+  ],
+  remote: [
+    "docs.view_own",
+    "finance.create",
+    "prod.view",
+    "prod.work",
+    "requests.create",
+    "hrdocs.create",
+    "archive.view",
+    "data.view",
+    "data.work",
   ],
 };
 

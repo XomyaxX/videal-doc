@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, Download, X } from "lucide-react";
 import { previewMode } from "@/lib/library-kinds";
 import { formatFileSize } from "@/lib/chat-media";
 import { ModelPreview } from "@/components/ModelPreview";
+import { DocxPreview } from "@/components/DocxPreview";
 
 export type MeetFile = { id: string; name: string; mime: string; size: number; previewFileId?: string };
 
@@ -69,6 +70,8 @@ function MeetFileViewer({
           <img src={hrefOf(f.id)} alt={f.name} className="mx-auto max-h-full max-w-full object-contain" />
         ) : k === "pdf" ? (
           <iframe title={f.name} src={hrefOf(f.id)} className="h-full w-full rounded-xl bg-white" />
+        ) : k === "docx" ? (
+          <DocxPreview src={hrefOf(f.id)} className="h-full" />
         ) : k === "video" ? (
           <video src={hrefOf(f.id)} controls className="mx-auto max-h-full w-full rounded-xl bg-black">
             <track kind="captions" />

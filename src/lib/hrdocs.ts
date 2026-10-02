@@ -29,6 +29,12 @@ export const HR_TYPES: {
     fields: ["from", "to"],
   },
   {
+    id: "study_leave",
+    name: "Учебный отпуск",
+    title: "Заявление на учебный отпуск",
+    fields: ["from", "to"],
+  },
+  {
     id: "sick",
     name: "Больничный",
     title: "Заявление об отсутствии по болезни",
@@ -111,6 +117,8 @@ export function letterBody(type: string, p: Record<string, string>): string[] {
       ];
     case "vacation":
       return [`Прошу предоставить ежегодный оплачиваемый отпуск с ${ruDate(p.from)} по ${ruDate(p.to)}.`]
+    case "study_leave":
+      return [`Прошу предоставить учебный отпуск с ${ruDate(p.from)} по ${ruDate(p.to)}.`];
     case "sick":
       return [
         `Прошу учесть период нетрудоспособности с ${ruDate(p.from)} по ${ruDate(p.to)}${p.reason ? ` (${p.reason})` : ""}.`,

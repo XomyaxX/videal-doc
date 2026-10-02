@@ -4,17 +4,22 @@ import { Card, PageHeader } from "@/components/ui";
 import { canManageLibrary, canViewLibrary } from "@/lib/library";
 import { LibraryForm } from "./LibraryForm";
 
-export default async function NewLibraryPage() {
+export default async function NewLibraryPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ folder?: string }>;
+}) {
   const user = await requireUser();
   if (!canViewLibrary(user) || !canManageLibrary(user)) redirect("/forbidden");
+  const folder = (await searchParams).folder || "";
   return (
     <div>
       <PageHeader
         title="В хранилище"
-        subtitle="Один блок — одна карточка. Внутри сколько угодно файлов. Потом блок целиком прикрепляют к задаче."
+        subtitle="Можно положить любой файл: mp3, pdf, архив, видео. Тип карточки — только ярлык, он ничего не режет."
       />
       <Card className="max-w-2xl">
-        <LibraryForm />
+        <LibraryForm parentId={folder} />
       </Card>
     </div>
   );

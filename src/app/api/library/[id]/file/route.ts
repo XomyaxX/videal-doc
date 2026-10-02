@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { canViewLibrary, previewMode, readLibraryBytes } from "@/lib/library";
+import { canViewLibrary, libraryItemVisible, previewMode, readLibraryBytes } from "@/lib/library";
 
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -14,6 +14,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     include: { files: { orderBy: { sortOrder: "asc" } } },
   });
   if (!row) return new NextResponse("Нет файла", { status: 404 });
+  if (!(await libraryItemVisible(session.user, id))) return new NextResponse("Нет файла", { status: 404 });
   const target = row.files[0] || row;
   const file = await readLibraryBytes(target);
   if (!file) return new NextResponse("Файл не найден на диске", { status: 404 });

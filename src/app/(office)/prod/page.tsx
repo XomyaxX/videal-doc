@@ -94,14 +94,9 @@ export default async function MyProdPage() {
         subtitle="Производство отдельно, поручения коллег — своим блоком."
         actions={
           lead ? (
-            <div className="flex gap-2">
-              <Button href="/prod/jobs/new" variant="secondary">
-                Крупная задача
-              </Button>
-              <Button href="/prod/new" variant="gold">
-                Новая задача
-              </Button>
-            </div>
+            <Button href="/prod/jobs/new" variant="secondary">
+              Крупная задача
+            </Button>
           ) : null
         }
       />

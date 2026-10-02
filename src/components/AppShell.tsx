@@ -5,11 +5,13 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   Bell,
+  Bot,
   CalendarCheck,
   CalendarDays,
   Boxes,
   ClipboardCheck,
   Clapperboard,
+  Database,
   FileStack,
   FilePenLine,
   FileText,
@@ -26,6 +28,7 @@ import {
   X,
 } from "lucide-react";
 import { AccountSwitcher } from "./AccountSwitcher";
+import { ValeraPanel } from "./ValeraPanel";
 import { cn } from "./ui";
 import type { SessionUser } from "@/lib/types";
 import { userCan } from "@/lib/types";
@@ -43,6 +46,7 @@ const NAV = [
   { href: "/chat", label: "Чаты", icon: MessageCircle, perm: null, section: "day" },
   { href: "/prod", label: "Производство", icon: Clapperboard, perm: "prod.view" as const, section: "work" },
   { href: "/library", label: "Хранилище", icon: Library, perm: "prod.work" as const, section: "work" },
+  { href: "/data", label: "Data", icon: Database, perm: "data.view" as const, section: "work" },
   { href: "/calendar", label: "Календарь", icon: CalendarDays, perm: null, section: "work" },
   { href: "/meet", label: "Совещания", icon: Video, perm: null, section: "work" },
   { href: "/documents", label: "Документы", icon: FileText, perm: null, section: "papers" },
@@ -64,6 +68,7 @@ function itemActive(href: string, path: string) {
   if (href === "/finance") return path.startsWith("/finance") || inFinance;
   if (href === "/prod") return path.startsWith("/prod");
   if (href === "/library") return path.startsWith("/library");
+  if (href === "/data") return path === "/data" || path.startsWith("/data/");
   if (href === "/documents") return path.startsWith("/documents");
   if (href === "/registry") return path.startsWith("/registry");
   if (href === "/requests") return path.startsWith("/requests");
@@ -130,28 +135,41 @@ export function AppShell({
   const path = usePathname();
   const isChat = path.startsWith("/chat");
   const slim = slimEmployeeNav(user);
-  const items = NAV.filter((i) => !i.perm || userCan(user, i.perm));
+  const items = NAV.filter((i) => {
+    if (user.roleCode === "remote" && (i.href === "/inventory" || i.href === "/duty" || i.href === "/library")) return false;
+    return !i.perm || userCan(user, i.perm);
+  });
   const primary = slim ? items.filter((i) => EMPLOYEE_PRIMARY.includes(i.href)) : items;
   const extra = slim ? items.filter((i) => !primary.some((p) => p.href === i.href)) : [];
   const [more, setMore] = useState(false);
+  const [valera, setValera] = useState(false);
   const [liveChat, setLiveChat] = useState(chatUnread);
   useEffect(() => {
     setLiveChat(chatUnread);
   }, [chatUnread]);
   useEffect(() => {
+    let paused = false;
+    const onHeavy = (e: Event) => {
+      paused = Boolean((e as CustomEvent).detail);
+    };
+    window.addEventListener("vd-heavy-download", onHeavy);
     const tick = async () => {
-      if (document.visibilityState === "hidden") return;
-      const res = await fetch("/api/chat/me");
+      if (paused || document.visibilityState === "hidden") return;
+      const res = await fetch("/api/chat/me").catch(() => null);
+      if (!res || !res.ok) return;
       const data = await res.json().catch(() => ({}));
       if (typeof data.unread === "number") setLiveChat(data.unread);
     };
     const t = setInterval(() => void tick(), 8000);
-    return () => clearInterval(t);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener("vd-heavy-download", onHeavy);
+    };
   }, []);
   const tabs = [
     items.find((i) => i.href === "/"),
     items.find((i) => i.href === "/chat"),
-    items.find((i) => i.href === "/prod"),
+    items.find((i) => i.href === "/library") || items.find((i) => i.href === "/data"),
   ].filter(Boolean) as typeof NAV;
   const moreActive = more || !tabs.some((t) => itemActive(t.href, path));
 
@@ -221,6 +239,14 @@ export function AppShell({
           )}
         </nav>
         <div className="border-t border-white/10 p-3">
+          <button
+            type="button"
+            onClick={() => setValera(true)}
+            className="mb-2 flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm hover:bg-white/10"
+          >
+            <Bot size={16} />
+            Валера AI
+          </button>
           <Link href="/notifications" className="mb-2 flex items-center gap-2 rounded-xl px-3 py-2 text-sm hover:bg-white/10">
             <Bell size={16} />
             Уведомления
@@ -244,6 +270,9 @@ export function AppShell({
           <div className="stamp text-[10px] text-gold-2">{orgShort}</div>
           <div className="font-serif text-lg leading-none">Видеал.Док</div>
         </div>
+        <button type="button" className="rounded-xl px-2 py-2 text-sm font-semibold text-gold-2" onClick={() => setValera(true)}>
+          Валера
+        </button>
         <Link href="/notifications" className="relative rounded-xl p-2 hover:bg-white/10" aria-label="Уведомления">
           <Bell size={20} />
           {unread > 0 ? (
@@ -362,6 +391,7 @@ export function AppShell({
           </div>
         </div>
       ) : null}
+      <ValeraPanel open={valera} onClose={() => setValera(false)} />
     </div>
   );
 }

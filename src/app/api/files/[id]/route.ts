@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { auditRemote, auditRequestIp } from "@/lib/audit";
 import { canReadStoredFile, readStoredFile } from "@/lib/files";
 import { filePreviewPngs } from "@/lib/pdf/raster";
 
@@ -14,6 +15,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const file = await readStoredFile(id);
   if (!file) return new NextResponse("Файл не найден", { status: 404 });
   const preview = req.nextUrl.searchParams.get("preview") === "1";
+  await auditRemote({
+    user: session.user,
+    action: preview ? "file.view" : "file.download",
+    entity: "file",
+    entityId: id,
+    details: file.rec.originalName,
+    ip: auditRequestIp(req),
+  });
   if (preview) {
     const sidecar =
       (await prisma.meetingFile.findFirst({ where: { fileId: id, previewFileId: { not: "" } }, select: { previewFileId: true } })) ||

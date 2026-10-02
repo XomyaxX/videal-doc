@@ -3,6 +3,48 @@ import { prisma } from "./prisma";
 import { officeClock, officeYmd } from "./dates";
 import { notify } from "./notify";
 
+/** First office day that may be written into the timesheet. Earlier days stay blank. */
+export const ATTENDANCE_FROM = "2026-10-02";
+
+export function attendanceStartsLater(ymd = officeYmd()) {
+  return ymd < ATTENDANCE_FROM;
+}
+
+export function attendanceClosedError() {
+  const when = new Intl.DateTimeFormat("ru-RU", {
+    timeZone: "Asia/Omsk",
+    day: "numeric",
+    month: "long",
+  }).format(new Date(`${ATTENDANCE_FROM}T12:00:00+06:00`));
+  return `Отметки прихода и ухода начнутся ${when}.`;
+}
+
+const TIMESHEET_SKIP: Array<[string, string]> = [
+  ["ермилов", ""],
+  ["ермилова", ""],
+  ["балов", "павел"],
+  ["балова", "ирина"],
+  ["беляева", "ксения"],
+  ["залуцкая", "людмила"],
+  ["жлудова", "ольга"],
+];
+
+/** People who stay off the attendance sheet: both Ermilovs, named office roles, the admin account, and remote staff. */
+export function onTimesheet(user: {
+  login?: string | null;
+  lastName?: string | null;
+  firstName?: string | null;
+  roleCode?: string | null;
+}) {
+  if ((user.roleCode || "") === "remote") return false;
+  const login = (user.login || "").trim().toLowerCase();
+  if (login === "admin") return false;
+  const last = (user.lastName || "").trim().toLocaleLowerCase("ru");
+  const first = (user.firstName || "").trim().toLocaleLowerCase("ru");
+  if (last === "администратор") return false;
+  return !TIMESHEET_SKIP.some(([l, f]) => last === l && (!f || first === f));
+}
+
 export const IN_GRACE_UNTIL = 10 * 60 + 15;
 export const OUT_EARLY_BEFORE = 17 * 60 + 45;
 export const MORNING_FROM = 9 * 60;
@@ -135,35 +177,62 @@ function ymdInRange(ymd: string, from: string, to: string) {
   return ymd >= from && ymd <= to;
 }
 
+export const LEAVE_TYPES = ["time_off", "unpaid_leave", "vacation", "study_leave", "remote", "day_swap", "sick"] as const;
+
+const RANGE_LEAVE = new Set(["unpaid_leave", "vacation", "study_leave", "remote", "sick"]);
+
+export function leaveShort(type: string) {
+  switch (type) {
+    case "time_off":
+      return "отгул";
+    case "day_swap":
+      return "замена";
+    case "unpaid_leave":
+      return "без содерж.";
+    case "vacation":
+      return "отпуск";
+    case "study_leave":
+      return "учебный";
+    case "sick":
+      return "больничный";
+    case "remote":
+      return "вне офиса";
+    default:
+      return "";
+  }
+}
+
+export function leaveCoversYmd(type: string, payloadJson: string, ymd: string) {
+  let p: Record<string, string> = {};
+  try {
+    p = JSON.parse(payloadJson || "{}") as Record<string, string>;
+  } catch {
+    p = {};
+  }
+  if (type === "time_off") {
+    const a = p.date || "";
+    const b = p.dateTo || a;
+    return Boolean(a && ymdInRange(ymd, a, b));
+  }
+  if (type === "day_swap") return p.from === ymd;
+  if (RANGE_LEAVE.has(type)) {
+    const a = p.from || "";
+    const b = p.to || a;
+    return Boolean(a && ymdInRange(ymd, a, b));
+  }
+  return false;
+}
+
 export async function onApprovedLeave(userId: string, ymd: string) {
   const rows = await prisma.hrRequest.findMany({
     where: {
       authorId: userId,
       status: "accepted",
-      type: { in: ["time_off", "unpaid_leave", "vacation", "remote", "day_swap", "sick"] },
+      type: { in: [...LEAVE_TYPES] },
     },
     select: { type: true, payloadJson: true },
   });
-  for (const row of rows) {
-    let p: Record<string, string> = {};
-    try {
-      p = JSON.parse(row.payloadJson || "{}") as Record<string, string>;
-    } catch {
-      p = {};
-    }
-    if (row.type === "time_off") {
-      const a = p.date || "";
-      const b = p.dateTo || a;
-      if (a && ymdInRange(ymd, a, b)) return true;
-    }
-    if (row.type === "day_swap" && p.from === ymd) return true;
-    if (["unpaid_leave", "vacation", "remote", "sick"].includes(row.type)) {
-      const a = p.from || "";
-      const b = p.to || a;
-      if (a && ymdInRange(ymd, a, b)) return true;
-    }
-  }
-  return false;
+  return rows.some((row) => leaveCoversYmd(row.type, row.payloadJson, ymd));
 }
 
 async function raiseFlag(opts: { userId: string; ymd: string; kind: string; minutes?: number; detail?: string }) {
@@ -180,10 +249,19 @@ async function raiseFlag(opts: { userId: string; ymd: string; kind: string; minu
   });
 }
 
-export async function markIn(opts: { userId: string; ip: string; extraIps?: string[]; source: "manual" | "auto" | "lan" }) {
+export async function markIn(opts: {
+  userId: string;
+  ip: string;
+  extraIps?: string[];
+  source: "manual" | "auto" | "lan" | "gate";
+  trust?: boolean;
+}) {
   const clock = officeClock();
+  if (attendanceStartsLater(clock.ymd)) {
+    return { ok: false as const, error: attendanceClosedError() };
+  }
   const extra = opts.extraIps || [];
-  const onSite = opts.source === "lan" ? true : await isOnSite(opts.ip);
+  const onSite = opts.trust || opts.source === "lan" ? true : await isOnSite(opts.ip);
   if (!onSite) {
     await prisma.attendanceEvent.create({
       data: { userId: opts.userId, ymd: clock.ymd, kind: "deny_in", ip: opts.ip, detail: opts.source },
@@ -227,10 +305,19 @@ export async function markIn(opts: { userId: string; ip: string; extraIps?: stri
   return { ok: true as const, day, already: false };
 }
 
-export async function markOut(opts: { userId: string; ip: string; extraIps?: string[]; source: "manual" | "auto" | "lan" }) {
+export async function markOut(opts: {
+  userId: string;
+  ip: string;
+  extraIps?: string[];
+  source: "manual" | "auto" | "lan" | "gate";
+  trust?: boolean;
+}) {
   const clock = officeClock();
+  if (attendanceStartsLater(clock.ymd)) {
+    return { ok: false as const, error: attendanceClosedError() };
+  }
   const extra = opts.extraIps || [];
-  const onSite = await isOnSite(opts.ip);
+  const onSite = opts.trust ? true : await isOnSite(opts.ip);
   if (!onSite) {
     await prisma.attendanceEvent.create({
       data: { userId: opts.userId, ymd: clock.ymd, kind: "deny_out", ip: opts.ip, detail: opts.source },
@@ -316,12 +403,16 @@ export async function tickPresence() {
     console.error("lan-scan", e);
   }
   const clock = officeClock();
+  if (attendanceStartsLater(clock.ymd)) return;
   if (!clock.weekdayWork) return;
   const active = await prisma.user.findMany({
     where: { deletedAt: null, status: "active" },
-    select: { id: true },
+    select: { id: true, login: true, lastName: true, firstName: true, role: { select: { code: true } } },
   });
-  const ids = active.map((u) => u.id);
+  const tracked = active.filter((u) =>
+    onTimesheet({ login: u.login, lastName: u.lastName, firstName: u.firstName, roleCode: u.role.code }),
+  );
+  const ids = tracked.map((u) => u.id);
   if (clock.minutes >= EVENING_FROM && clock.minutes < EVENING_TO) {
     const days = await prisma.attendanceDay.findMany({
       where: { ymd: clock.ymd, userId: { in: ids }, inAt: { not: null }, outAt: null, outRemindedAt: null },
@@ -339,7 +430,7 @@ export async function tickPresence() {
     }
   }
   if (clock.minutes >= 11 * 60 + 5 && clock.minutes < 12 * 60) {
-    for (const u of active) {
+    for (const u of tracked) {
       if (await onApprovedLeave(u.id, clock.ymd)) continue;
       const day = await prisma.attendanceDay.findUnique({
         where: { userId_ymd: { userId: u.id, ymd: clock.ymd } },
@@ -350,7 +441,7 @@ export async function tickPresence() {
     }
   }
   if (clock.minutes >= 19 * 60 && clock.minutes < 20 * 60) {
-    for (const u of active) {
+    for (const u of tracked) {
       if (await onApprovedLeave(u.id, clock.ymd)) continue;
       const day = await prisma.attendanceDay.findUnique({
         where: { userId_ymd: { userId: u.id, ymd: clock.ymd } },
@@ -358,6 +449,27 @@ export async function tickPresence() {
       if (day?.inAt && !day.outAt) {
         await raiseFlag({ userId: u.id, ymd: clock.ymd, kind: "no_out", detail: "нет ухода к 19:00" });
       }
+    }
+  }
+  if (clock.minutes >= 20 * 60) await closeForgotten(clock.ymd, clock.weekdayWork, new Set(ids));
+}
+
+async function closeForgotten(ymd: string, weekdayWork: boolean, tracked: Set<string>) {
+  const open = await prisma.attendanceDay.findMany({
+    where: { ymd, userId: { in: [...tracked] }, inAt: { not: null }, outAt: null },
+  });
+  for (const day of open) {
+    if (await onApprovedLeave(day.userId, ymd)) continue;
+    await raiseFlag({ userId: day.userId, ymd, kind: "forgot", detail: "нет ухода к 20:00" });
+  }
+  if (!weekdayWork) return;
+  for (const id of tracked) {
+    if (await onApprovedLeave(id, ymd)) continue;
+    const day = await prisma.attendanceDay.findUnique({
+      where: { userId_ymd: { userId: id, ymd } },
+    });
+    if (!day?.inAt) {
+      await raiseFlag({ userId: id, ymd, kind: "forgot", detail: "нет отметки за день" });
     }
   }
 }
@@ -368,6 +480,7 @@ export function flagLabel(kind: string) {
   if (kind === "early_out") return "Ранний уход";
   if (kind === "no_out") return "Нет ухода";
   if (kind === "offsite_try") return "Попытка вне офиса";
+  if (kind === "forgot") return "Забыл отметиться";
   return kind;
 }
 

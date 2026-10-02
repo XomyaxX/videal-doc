@@ -17,6 +17,7 @@ import { ChatPlus } from "./ChatPlus";
 import { VoicePlayer } from "./VoicePlayer";
 import { VoiceRecorder } from "./VoiceRecorder";
 import { GlbPreview, ModelPreview } from "@/components/ModelPreview";
+import { DocxPreview } from "@/components/DocxPreview";
 import { isModel3dName, needsGlbPreview, previewMode } from "@/lib/library-kinds";
 
 type Person = {
@@ -1573,6 +1574,9 @@ function PayloadView({
         }
         if (mode === "video" || f.mime.startsWith("video/")) {
           return <video key={f.blobId} src={url} controls className="mt-2 max-h-80 w-full rounded-xl bg-black" />;
+        }
+        if (mode === "docx") {
+          return <DocxPreview key={f.blobId} src={url} compact className="mt-2" />;
         }
         if (mode === "model3d") {
           return (

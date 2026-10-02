@@ -10,7 +10,18 @@ export async function GET() {
   const manage = userCan(session.user, "inventory.manage");
   const rows = await prisma.inventoryItem.findMany({
     where: manage ? { deletedAt: null } : { deletedAt: null, userId: session.user.id },
-    include: { user: { select: { id: true, lastName: true, firstName: true, middleName: true, login: true } } },
+    include: {
+      user: {
+        select: {
+          id: true,
+          lastName: true,
+          firstName: true,
+          middleName: true,
+          login: true,
+          role: { select: { code: true, name: true } },
+        },
+      },
+    },
     orderBy: [{ holderName: "asc" }, { invNo: "asc" }, { name: "asc" }],
   });
   const people = manage

@@ -11,6 +11,8 @@ import { isFundApprover } from "@/lib/leaders";
 import { AhoPanel } from "./AhoPanel";
 import { EmployeeActions } from "./EmployeeActions";
 import { USER_SAFE_SELECT } from "@/lib/user-public";
+import { previewMode } from "@/lib/library-kinds";
+import { DocxPreview } from "@/components/DocxPreview";
 
 export default async function RequestPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requirePermission("requests.create");
@@ -170,16 +172,21 @@ function FileList({
       {ids.map((id) => {
         const f = byId[id];
         const name = f?.originalName || "файл";
-        const image = (f?.mimeType || "").startsWith("image/");
+        const mode = previewMode({ mimeType: f?.mimeType || "", originalName: name });
+        const href = `/api/files/${id}`;
         return (
           <li key={id}>
-            {image ? (
-              <a href={`/api/files/${id}`} target="_blank" rel="noreferrer" className="block">
-                <img src={`/api/files/${id}`} alt={name} className="max-h-48 rounded-xl border border-line object-contain" />
+            {mode === "image" ? (
+              <a href={href} target="_blank" rel="noreferrer" className="block">
+                <img src={href} alt={name} className="max-h-48 rounded-xl border border-line object-contain" />
                 <span className="mt-1 block text-xs text-muted">{name}</span>
               </a>
+            ) : mode === "pdf" ? (
+              <iframe title={name} src={href} className="h-56 w-full rounded-xl border border-line bg-white" />
+            ) : mode === "docx" ? (
+              <DocxPreview src={href} compact />
             ) : (
-              <a className="text-sm text-gold underline" href={`/api/files/${id}`}>
+              <a className="text-sm text-gold underline" href={href}>
                 {name}
               </a>
             )}

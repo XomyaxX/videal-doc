@@ -27,6 +27,8 @@ export function EmployeeForm({
 }) {
   const [error, setError] = useState("");
   const [temp, setTemp] = useState("");
+  const [login, setLogin] = useState("");
+  const [createdId, setCreatedId] = useState("");
   const [busy, setBusy] = useState(false);
   const isEdit = Boolean(initial?.id);
 
@@ -50,6 +52,8 @@ export function EmployeeForm({
       return;
     }
     if (data.tempPassword) {
+      setLogin(data.login || "");
+      setCreatedId(data.id || "");
       setTemp(data.tempPassword);
       return;
     }
@@ -60,11 +64,18 @@ export function EmployeeForm({
     return (
       <Card>
         <h2 className="font-serif text-2xl text-navy">Сотрудник создан</h2>
-        <p className="mt-2">Отдайте ему логин и временный пароль. При входе система попросит сменить пароль.</p>
-        <p className="mt-4 rounded-xl bg-paper p-4 font-mono text-lg">Пароль: {temp}</p>
-        <Button href="/employees" className="mt-4">
-          К списку
-        </Button>
+        <p className="mt-2">Отдайте логин и временный пароль лично. При входе система попросит сменить пароль.</p>
+        <div className="mt-4 grid gap-2 rounded-xl bg-paper p-4 font-mono text-lg">
+          <p>Логин: {login}</p>
+          <p>Пароль: {temp}</p>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {createdId ? <Button href={`/employees/${createdId}/nda`}>Заполнить соглашение</Button> : null}
+          <Button href="/employees" variant="secondary">
+            К списку
+          </Button>
+        </div>
+        <p className="mt-3 text-sm text-muted">Паспорт и адрес прописки заполняются в соглашении. Реквизиты компании уже в документе.</p>
       </Card>
     );
   }
@@ -105,9 +116,11 @@ export function EmployeeForm({
       >
         <Input name="smtpPassword" type="password" placeholder={initial?.hasSmtpPassword === "1" ? "••••••" : ""} autoComplete="new-password" />
       </Field>
-      <Field label="Логин">
-        <Input name="login" defaultValue={initial?.login} required />
-      </Field>
+      {isEdit ? (
+        <Field label="Логин">
+          <Input name="login" defaultValue={initial?.login} required />
+        </Field>
+      ) : null}
       <Field label="Должность">
         <Select name="positionId" defaultValue={initial?.positionId || ""}>
           <option value="">—</option>
@@ -204,6 +217,9 @@ export function EmployeeForm({
         </div>
       ) : null}
       <div className="md:col-span-2">
+        {isEdit ? null : (
+          <p className="mb-3 text-sm text-muted">Логин соберётся из фамилии и покажется вместе с временным паролем.</p>
+        )}
         <Button type="submit" disabled={busy}>
           {isEdit ? "Сохранить" : "Создать сотрудника"}
         </Button>

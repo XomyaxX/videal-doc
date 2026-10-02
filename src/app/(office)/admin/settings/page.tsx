@@ -8,11 +8,13 @@ import { TestDelivery } from "./TestDelivery";
 import { OfficeNetCard } from "./OfficeNetCard";
 import { OfficeLanCard } from "./OfficeLanCard";
 import { ChatKeyCard } from "./ChatKeyCard";
+import { GateBgCard } from "./GateBgCard";
 import { fullName } from "@/lib/names";
+import { gateBgMeta } from "@/lib/gate-bg";
 
 export default async function SettingsPage() {
   await requirePermission("admin.settings");
-  const [s, publicUrl, people] = await Promise.all([
+  const [s, publicUrl, people, gateBg] = await Promise.all([
     prisma.appSettings.findUnique({ where: { id: "default" } }),
     readPublicUrl(),
     prisma.user.findMany({
@@ -20,10 +22,19 @@ export default async function SettingsPage() {
       select: { id: true, login: true, lastName: true, firstName: true, middleName: true },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     }),
+    gateBgMeta(),
   ]);
   return (
     <div>
       <PageHeader title="Настройки системы" />
+      <GateBgCard
+        initial={{
+          name: gateBg?.name || "",
+          mime: gateBg?.mime || "",
+          kind: gateBg?.kind || "",
+          v: gateBg?.v || 0,
+        }}
+      />
       <PublicUrlBlock initialUrl={publicUrl} />
       <OfficeNetCard />
       <OfficeLanCard people={people.map((p) => ({ id: p.id, name: fullName(p) }))} />

@@ -3,19 +3,15 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, ErrorText, Field, Input, Select, Textarea } from "@/components/ui";
-import { LIBRARY_ACCEPT, LIBRARY_KIND_EXT, LIBRARY_KINDS, titleFromFilename } from "@/lib/library-kinds";
+import { guessLibraryKind, libraryKindOk, LIBRARY_KINDS, titleFromFilename } from "@/lib/library-kinds";
+import { uploadLibraryFile } from "@/lib/library-upload";
 
 type Row = { key: string; file: File };
 
-function extOf(name: string) {
-  const i = name.lastIndexOf(".");
-  return i >= 0 ? name.slice(i).toLowerCase() : "";
-}
-
-export function LibraryForm() {
+export function LibraryForm({ parentId = "" }: { parentId?: string }) {
   const router = useRouter();
   const [title, setTitle] = useState("");
-  const [kind, setKind] = useState("image");
+  const [kind, setKind] = useState("file");
   const [description, setDescription] = useState("");
   const [rows, setRows] = useState<Row[]>([]);
   const [over, setOver] = useState(false);
@@ -39,6 +35,7 @@ export function LibraryForm() {
       return next;
     });
     setTitle((t) => t || titleFromFilename(incoming[0].name));
+    setKind((k) => (k && k !== "file" ? k : guessLibraryKind(incoming[0].name)));
     setError("");
   }
 
@@ -48,33 +45,33 @@ export function LibraryForm() {
       setError("Перетащите файлы или выберите их с диска");
       return;
     }
-    const allowed = LIBRARY_KIND_EXT[kind] || [];
-    const bad = rows.find((r) => !allowed.includes(extOf(r.file.name)));
-    if (bad) {
-      setError(`«${bad.file.name}» не подходит для «${spec?.label}». Уберите файл или смените тип блока.`);
-      return;
-    }
     setBusy(true);
     setError("");
-    const fd = new FormData();
-    fd.set("title", title.trim() || titleFromFilename(rows[0].file.name));
-    fd.set("kind", kind);
-    fd.set("description", description.trim());
-    for (const row of rows) fd.append("files", row.file, row.file.name);
-    const res = await fetch("/api/library", { method: "POST", body: fd });
-    const data = await res.json().catch(() => ({}));
-    setBusy(false);
-    if (!res.ok) {
-      setError(data.error || "Не удалось сохранить");
-      return;
+    try {
+      let lastId = "";
+      for (const row of rows) {
+        const fileName = row.file.name;
+        const data = await uploadLibraryFile({
+          file: row.file,
+          fileName,
+          parentId: parentId || undefined,
+          title: rows.length === 1 ? title.trim() || titleFromFilename(fileName) : titleFromFilename(fileName),
+          kind: libraryKindOk(kind) ? kind : guessLibraryKind(fileName),
+          description: description.trim() || title.trim() || titleFromFilename(fileName),
+        });
+        lastId = data.id || lastId;
+      }
+      router.push(parentId ? `/library?folder=${parentId}` : lastId ? `/library/${lastId}` : "/library");
+    } catch (err) {
+      setBusy(false);
+      setError(err instanceof Error ? err.message : "Не удалось сохранить");
     }
-    router.push(data.id ? `/library/${data.id}` : "/library");
   }
 
   return (
     <form onSubmit={submit} className="space-y-4">
       <ErrorText>{error}</ErrorText>
-      <Field label="Название блока" hint="Одна карточка в хранилище, сколько бы файлов ни положили">
+      <Field label="Название" hint="Если файлов несколько, у каждого будет своя карточка">
         <Input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
@@ -82,7 +79,7 @@ export function LibraryForm() {
           placeholder="Концепты комнаты, логотипы Superглазка…"
         />
       </Field>
-      <Field label="Тип" hint={spec?.hint}>
+      <Field label="Тип" hint={spec?.hint || "Ярлык карточки. Тип файла не ограничивает — можно mp3, архив, что угодно."}>
         <Select name="kind" value={kind} onChange={(e) => setKind(e.target.value)} required>
           {LIBRARY_KINDS.map((k) => (
             <option key={k.id} value={k.id}>
@@ -95,7 +92,6 @@ export function LibraryForm() {
         <Textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          required
           placeholder="Финальные концепты для анимации сцены SC03, не резать поля."
         />
       </Field>
@@ -116,11 +112,10 @@ export function LibraryForm() {
         }}
       >
         <div className="font-serif text-2xl text-navy">Перетащите файлы сюда</div>
-        <p className="mt-2 max-w-md text-muted">Все попадут в один блок. Можно добавить ещё после первого броска.</p>
+        <p className="mt-2 max-w-md text-muted">Любые файлы: mp3, pdf, архивы, видео. Можно добавить ещё после первого броска.</p>
         <input
           type="file"
           multiple
-          accept={LIBRARY_ACCEPT}
           className="mt-4"
           disabled={busy}
           onChange={(e) => {

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import {
   canManageLibrary,
   canViewLibrary,
+  filterVisibleLibrary,
   libraryKindOk,
   saveLibraryItem,
   serializeLibrary,
@@ -34,11 +35,13 @@ export async function GET(req: NextRequest) {
     include: {
       author: { select: { lastName: true, firstName: true, middleName: true } },
       files: { orderBy: { sortOrder: "asc" } },
+      _count: { select: { acl: true } },
     },
     orderBy: { createdAt: "desc" },
-    take: 200,
+    take: 400,
   });
-  return NextResponse.json({ rows: rows.map(serializeLibrary) });
+  const visible = await filterVisibleLibrary(session.user, rows);
+  return NextResponse.json({ rows: visible.map(serializeLibrary) });
 }
 
 export async function POST(req: NextRequest) {
@@ -70,6 +73,7 @@ export async function POST(req: NextRequest) {
       title: String(form.get("title") || ""),
       kind: String(form.get("kind") || ""),
       description: String(form.get("description") || ""),
+      parentId: String(form.get("parentId") || ""),
       files,
       preview:
         preview instanceof File && preview.size > 0

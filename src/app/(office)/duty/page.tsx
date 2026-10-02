@@ -1,7 +1,9 @@
+import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { Button, Card, PageHeader } from "@/components/ui";
 import { Avatar } from "@/components/Avatar";
-import { DUTY, dutyForWeek, upcomingCleanDays, upcomingWorkdays, weekdayIso, type DutyPerson } from "@/lib/duty";
+import { canEditDuty, dutyForWeek, upcomingCleanDays, upcomingWorkdays, weekdayIso, type DutyPerson } from "@/lib/duty";
+import { DutyEditor } from "./DutyEditor";
 import { officeYmd } from "@/lib/dates";
 
 function DutyNow({
@@ -50,6 +52,7 @@ function DutyNow({
 
 export default async function DutyPage() {
   const user = await requireUser();
+  if (user.roleCode === "remote") redirect("/forbidden");
   const now = officeYmd();
   const cur = await dutyForWeek(now);
   const trashDays = upcomingWorkdays(cur.men, now, 20, cur.overrides);
@@ -60,7 +63,7 @@ export default async function DutyPage() {
     <div>
       <PageHeader
         title="Графики студии"
-        subtitle="Вынос мусора — мужчины, каждый рабочий день. Уборка — женщины, вторник и пятница, двое. Журнал прихода — тот же живой состав. Без руководства, АХО и кадров."
+        subtitle="Вынос мусора — мужчины, каждый рабочий день. Уборка — женщины, вторник и пятница, двое. Субруководители в графиках и в журнале. Без руководства, АХО и кадров."
         actions={
           <Button href="/api/duty/pdf?kind=journal" variant="secondary">
             Журнал прихода/ухода
@@ -91,44 +94,15 @@ export default async function DutyPage() {
           meId={user.id}
         />
       </div>
-      <div className="mt-6 grid gap-4 md:grid-cols-2">
-        <Card>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-serif text-xl text-navy">{DUTY.trash.title} · 20 рабочих дней</h2>
-            <Button href="/api/duty/pdf?kind=trash" variant="ghost">
-              PDF
-            </Button>
-          </div>
-          <table className="mt-3 w-full text-sm">
-            <tbody>
-              {trashDays.map((d) => (
-                <tr key={d.ymd} className={d.ymd === cur.today ? "font-semibold text-navy" : ""}>
-                  <td className="py-1.5">{d.label}</td>
-                  <td>{d.person?.name || "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
-        <Card>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-serif text-xl text-navy">{DUTY.clean.title} · вт и пт</h2>
-            <Button href="/api/duty/pdf?kind=clean" variant="ghost">
-              PDF
-            </Button>
-          </div>
-          <table className="mt-3 w-full text-sm">
-            <tbody>
-              {cleanDays.map((d) => (
-                <tr key={d.ymd} className={d.ymd === cur.today ? "font-semibold text-navy" : ""}>
-                  <td className="py-1.5 pr-3 whitespace-nowrap">{d.label}</td>
-                  <td>{d.people.map((p) => p.name).join(" · ") || "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
-      </div>
+      <DutyEditor
+        canEdit={canEditDuty(user)}
+        today={cur.today}
+        men={cur.men}
+        women={cur.women}
+        overrides={cur.overrides}
+        trashDays={trashDays}
+        cleanDays={cleanDays}
+      />
     </div>
   );
 }

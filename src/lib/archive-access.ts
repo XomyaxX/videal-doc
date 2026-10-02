@@ -10,6 +10,7 @@ export const ARCHIVE_KIND_LABEL: Record<string, string> = {
   purchase: "Закупка",
   hr: "Заявление",
   hr_scan: "Подписанное заявление",
+  nda: "Соглашение о неразглашении",
 };
 
 export const ARCHIVE_KIND_TONE: Record<string, string> = {
@@ -22,6 +23,7 @@ export const ARCHIVE_KIND_TONE: Record<string, string> = {
   purchase: "draft",
   hr: "wait",
   hr_scan: "ok",
+  nda: "wait",
 };
 
 export function canViewArchive(

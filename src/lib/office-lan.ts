@@ -3,7 +3,7 @@ import { promisify } from "util";
 import { createHmac, timingSafeEqual } from "crypto";
 import { prisma } from "./prisma";
 import { officeClock } from "./dates";
-import { officeCidrs, onApprovedLeave, markIn } from "./presence";
+import { officeCidrs, onApprovedLeave, markIn, onTimesheet } from "./presence";
 
 const execFileAsync = promisify(execFile);
 export const LAN_SEEN_MS = 12 * 60 * 1000;
@@ -149,7 +149,20 @@ export async function rememberLanSightings(hosts: LanHost[]) {
   if (!macs.length) return [];
   const stations = await prisma.officeStation.findMany({
     where: { mac: { in: macs } },
-    include: { user: { select: { id: true, lastName: true, firstName: true, middleName: true, status: true, deletedAt: true } } },
+    include: {
+      user: {
+        select: {
+          id: true,
+          login: true,
+          lastName: true,
+          firstName: true,
+          middleName: true,
+          status: true,
+          deletedAt: true,
+          role: { select: { code: true } },
+        },
+      },
+    },
   });
   const byMac = new Map(hosts.map((h) => [h.mac, h]));
   for (const st of stations) {
@@ -173,6 +186,16 @@ export async function applyLanPresence() {
   const seenUsers = new Set<string>();
   for (const st of stations) {
     if (st.user.deletedAt || st.user.status !== "active") continue;
+    if (
+      !onTimesheet({
+        login: st.user.login,
+        lastName: st.user.lastName,
+        firstName: st.user.firstName,
+        roleCode: st.user.role.code,
+      })
+    ) {
+      continue;
+    }
     if (seenUsers.has(st.userId)) continue;
     seenUsers.add(st.userId);
     if (await onApprovedLeave(st.userId, clock.ymd)) continue;

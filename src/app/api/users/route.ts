@@ -7,6 +7,17 @@ import { audit } from "@/lib/audit";
 import { canAssignRole } from "@/lib/role-guard";
 import { storeSecret } from "@/lib/secret";
 import { inferGender, parseGender } from "@/lib/gender";
+import { loginStem } from "@/lib/names";
+
+async function freeLogin(lastName: string) {
+  const stem = loginStem(lastName);
+  for (let n = 0; n < 40; n++) {
+    const login = n === 0 ? stem : `${stem}${n + 1}`;
+    const exists = await prisma.user.findUnique({ where: { login }, select: { id: true } });
+    if (!exists) return login;
+  }
+  return `${stem}-${Date.now().toString().slice(-6)}`;
+}
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
@@ -14,12 +25,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Нет права" }, { status: 403 });
   }
   const body = await req.json().catch(() => null);
-  const login = String(body?.login || "").trim().toLowerCase();
   const lastName = String(body?.lastName || "").trim();
   const firstName = String(body?.firstName || "").trim();
-  if (!login || !lastName || !firstName) {
-    return NextResponse.json({ error: "Нужны логин, фамилия и имя" }, { status: 400 });
+  if (!lastName || !firstName) {
+    return NextResponse.json({ error: "Нужны фамилия и имя" }, { status: 400 });
   }
+  const requested = String(body?.login || "").trim().toLowerCase();
+  const login = requested || (await freeLogin(lastName));
   const exists = await prisma.user.findUnique({ where: { login } });
   if (exists) return NextResponse.json({ error: "Такой логин уже есть" }, { status: 400 });
   const role = await prisma.role.findUnique({ where: { id: String(body?.roleId || "") } });
@@ -76,5 +88,13 @@ export async function POST(req: NextRequest) {
   });
   const { syncOfficialChats } = await import("@/lib/chat-official");
   await syncOfficialChats(true);
-  return NextResponse.json({ id: user.id, tempPassword: temp });
+  let ndaFileId = "";
+  try {
+    const { issueEmployeeNda } = await import("@/lib/nda");
+    const nda = await issueEmployeeNda(user.id);
+    ndaFileId = nda?.fileId || "";
+  } catch (e) {
+    console.error("nda.create", user.id, e);
+  }
+  return NextResponse.json({ id: user.id, login: user.login, tempPassword: temp, ndaFileId });
 }

@@ -12,6 +12,15 @@ type PeerInfo = { id: string; fullName: string; photoFileId: string; audioOn: bo
 
 const STUN: RTCConfiguration = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
 
+function recMime() {
+  if (typeof MediaRecorder === "undefined") return "audio/webm";
+  try {
+    return MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
+  } catch {
+    return "audio/webm";
+  }
+}
+
 function Tile({
   stream,
   name,
@@ -98,15 +107,21 @@ export function MeetRoom({ meet, meId, hangupHref }: { meet: MeetDto; meId: stri
   const recChunks = useRef<Blob[]>([]);
   const mixed = useRef(new Set<string>());
   const trackRecs = useRef(new Map<string, { name: string; mr: MediaRecorder; chunks: Blob[] }>());
-  const mimeRec = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
+  const wantRecRef = useRef(wantRec);
+  wantRecRef.current = wantRec;
+  const remoteRef = useRef(remote);
+  remoteRef.current = remote;
+  const peersRef = useRef(peers);
+  peersRef.current = peers;
 
   function startTrackRec(id: string, stream: MediaStream, name: string) {
-    if (!meet.canHost || !wantRec || trackRecs.current.has(id)) return;
+    if (!meet.canHost || !wantRecRef.current || trackRecs.current.has(id)) return;
+    if (typeof MediaRecorder === "undefined") return;
     const aud = stream.getAudioTracks();
     if (!aud.length) return;
     try {
       const chunks: Blob[] = [];
-      const mr = new MediaRecorder(new MediaStream(aud), { mimeType: mimeRec });
+      const mr = new MediaRecorder(new MediaStream(aud), { mimeType: recMime() });
       mr.ondataavailable = (e) => {
         if (e.data.size) chunks.push(e.data);
       };
@@ -131,8 +146,12 @@ export function MeetRoom({ meet, meId, hangupHref }: { meet: MeetDto; meId: stri
     }
   }
 
-  function startMixer() {
-    if (!meet.canHost || recCtx.current) return;
+  function ensureAudioCtx() {
+    if (!meet.canHost || typeof window === "undefined") return;
+    if (recCtx.current) {
+      void recCtx.current.resume();
+      return;
+    }
     const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     const ctx = new AC();
     const merger = ctx.createChannelMerger(2);
@@ -144,26 +163,38 @@ export function MeetRoom({ meet, meId, hangupHref }: { meet: MeetDto; meId: stri
     recDest.current = dest;
     recMerger.current = merger;
     recOthers.current = others;
+    void ctx.resume();
+  }
+
+  function hookStreams() {
     if (localRef.current?.getAudioTracks().length) {
       mixStream("local", localRef.current);
       startTrackRec("local", localRef.current, meet.myName || "Организатор");
     }
-    Object.entries(remote).forEach(([id, s]) => {
+    Object.entries(remoteRef.current).forEach(([id, s]) => {
       mixStream(id, s);
-      const who = peers.find((p) => p.id === id)?.fullName || "Участник";
+      const who = peersRef.current.find((p) => p.id === id)?.fullName || "Участник";
       startTrackRec(id, s, who);
     });
   }
 
+  function startMixer() {
+    if (!meet.canHost) return;
+    ensureAudioCtx();
+    hookStreams();
+  }
+
   function startRec() {
-    if (!meet.canHost || !wantRec || rec.current) return;
+    if (!meet.canHost || !wantRecRef.current || rec.current) return;
+    if (typeof MediaRecorder === "undefined") {
+      setRecFail("браузер не умеет писать звук");
+      return;
+    }
     startMixer();
-    void recCtx.current?.resume();
     const dest = recDest.current;
     if (!dest) return;
-    const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
     recChunks.current = [];
-    const mr = new MediaRecorder(dest.stream, { mimeType: mime });
+    const mr = new MediaRecorder(dest.stream, { mimeType: recMime() });
     mr.ondataavailable = (e) => {
       if (e.data.size) recChunks.current.push(e.data);
     };
@@ -177,74 +208,85 @@ export function MeetRoom({ meet, meId, hangupHref }: { meet: MeetDto; meId: stri
     const mr = rec.current;
     rec.current = null;
     setRecOn(false);
-    if (!mr && !trackRecs.current.size) return;
-    flushLock.current = true;
-    if (mr && mr.state !== "inactive") {
-      await new Promise<void>((resolve) => {
-        mr.onstop = () => resolve();
-        try {
-          mr.stop();
-        } catch {
-          resolve();
-        }
-      });
+    if (!mr && !trackRecs.current.size) {
+      if (meet.canHost && wantRecRef.current) {
+        setRecFail("запись пустая");
+        setErr("Звук не записался. На карточке совещания можно загрузить файл вручную, тогда сводка соберётся.");
+      }
+      return;
     }
-    const blob = new Blob(recChunks.current, { type: mr?.mimeType || "audio/webm" });
-    recChunks.current = [];
-    const tracks: { name: string; blob: Blob }[] = [];
-    for (const tr of trackRecs.current.values()) {
-      if (tr.mr.state !== "inactive") {
+    flushLock.current = true;
+    try {
+      if (mr && mr.state !== "inactive") {
         await new Promise<void>((resolve) => {
-          tr.mr.onstop = () => resolve();
+          mr.onstop = () => resolve();
           try {
-            tr.mr.stop();
+            mr.stop();
           } catch {
             resolve();
           }
         });
       }
-      const b = new Blob(tr.chunks, { type: mimeRec });
-      if (b.size >= 500) tracks.push({ name: tr.name, blob: b });
-    }
-    trackRecs.current.clear();
-    if (blob.size < 2000 && !tracks.length) {
+      const blob = new Blob(recChunks.current, { type: mr?.mimeType || "audio/webm" });
+      recChunks.current = [];
+      const tracks: { name: string; blob: Blob }[] = [];
+      for (const tr of trackRecs.current.values()) {
+        if (tr.mr.state !== "inactive") {
+          await new Promise<void>((resolve) => {
+            tr.mr.onstop = () => resolve();
+            try {
+              tr.mr.stop();
+            } catch {
+              resolve();
+            }
+          });
+        }
+        const b = new Blob(tr.chunks, { type: recMime() });
+        if (b.size >= 500) tracks.push({ name: tr.name, blob: b });
+      }
+      trackRecs.current.clear();
+      if (blob.size < 2000 && !tracks.length) {
+        setRecFail("запись пустая");
+        setErr("Звук не записался. На карточке совещания можно загрузить файл вручную, тогда сводка соберётся.");
+        return;
+      }
+      setUploading(true);
+      setRecFail("");
+      try {
+        const fd = new FormData();
+        if (blob.size >= 2000) {
+          fd.set("file", blob, "meeting.webm");
+          fd.set("stereo", tracks.length >= 2 ? "0" : "1");
+        }
+        for (const t of tracks) {
+          fd.append("track", t.blob, `${t.name}.webm`);
+          fd.append("trackName", t.name);
+        }
+        const res = await fetch(`/api/meet/${meet.id}/recording`, { method: "POST", body: fd, keepalive: Boolean(opts?.keepalive) });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          const msg = (data as { error?: string }).error || `запись не ушла (${res.status})`;
+          setRecFail(msg);
+          setErr(`${msg}. Загрузите файл на карточке совещания.`);
+        }
+      } catch {
+        setRecFail("запись не ушла");
+        setErr("Запись не отправилась. Загрузите файл на карточке совещания.");
+      }
+      setUploading(false);
+    } finally {
+      try {
+        await recCtx.current?.close();
+      } catch {
+        /* ignore */
+      }
+      recCtx.current = null;
+      recDest.current = null;
+      recMerger.current = null;
+      recOthers.current = null;
+      mixed.current.clear();
       flushLock.current = false;
-      return;
     }
-    setUploading(true);
-    setRecFail("");
-    try {
-      const fd = new FormData();
-      if (blob.size >= 2000) {
-        fd.set("file", blob, "meeting.webm");
-        fd.set("stereo", tracks.length >= 2 ? "0" : "1");
-      }
-      for (const t of tracks) {
-        fd.append("track", t.blob, `${t.name}.webm`);
-        fd.append("trackName", t.name);
-      }
-      const res = await fetch(`/api/meet/${meet.id}/recording`, { method: "POST", body: fd, keepalive: Boolean(opts?.keepalive) });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        const msg = (data as { error?: string }).error || `запись не ушла (${res.status})`;
-        setRecFail(msg);
-        setErr(`${msg}. Загрузите файл на карточке совещания.`);
-      }
-    } catch {
-      setRecFail("запись не ушла");
-      setErr("Запись не отправилась. Загрузите файл на карточке совещания.");
-    }
-    setUploading(false);
-    try {
-      await recCtx.current?.close();
-    } catch {
-      /* ignore */
-    }
-    recCtx.current = null;
-    recDest.current = null;
-    recMerger.current = null;
-    recOthers.current = null;
-    mixed.current.clear();
   }
 
   const postSignal = useCallback(
@@ -315,8 +357,8 @@ export function MeetRoom({ meet, meId, hangupHref }: { meet: MeetDto; meId: stri
         const stream = e.streams[0] || new MediaStream([e.track]);
         setRemote((prev) => ({ ...prev, [peerId]: stream }));
         mixStream(peerId, stream);
-        if (rec.current) {
-          const who = peers.find((p) => p.id === peerId)?.fullName || "Участник";
+        if (meet.canHost && wantRecRef.current) {
+          const who = peersRef.current.find((p) => p.id === peerId)?.fullName || "Участник";
           startTrackRec(peerId, stream, who);
         }
       };
@@ -395,6 +437,7 @@ export function MeetRoom({ meet, meId, hangupHref }: { meet: MeetDto; meId: stri
       setErr("Нужно согласие на запись");
       return;
     }
+    if (meet.canHost && wantRecRef.current) ensureAudioCtx();
     if (!localRef.current) await startPreview();
     if (!localRef.current) return;
     const res = await fetch(`/api/meet/${meet.id}/peers`, {
@@ -416,7 +459,10 @@ export function MeetRoom({ meet, meId, hangupHref }: { meet: MeetDto; meId: stri
       });
     }
     setReady(true);
-    if (meet.canHost && wantRec) startRec();
+    if (meet.canHost && wantRecRef.current) {
+      void recCtx.current?.resume();
+      startRec();
+    }
   }
 
   useEffect(() => {
@@ -435,13 +481,18 @@ export function MeetRoom({ meet, meId, hangupHref }: { meet: MeetDto; meId: stri
     const onHide = () => {
       if (meet.canHost) void flushRec({ keepalive: true });
     };
+    const kickAudio = () => {
+      void recCtx.current?.resume();
+    };
     document.addEventListener("fullscreenchange", onFs);
     window.addEventListener("pagehide", onHide);
+    window.addEventListener("pointerdown", kickAudio);
     void startPreview();
     return () => {
       window.clearTimeout(t);
       document.removeEventListener("fullscreenchange", onFs);
       window.removeEventListener("pagehide", onHide);
+      window.removeEventListener("pointerdown", kickAudio);
       if (meet.canHost) void flushRec({ keepalive: true });
       localRef.current?.getTracks().forEach((tr) => tr.stop());
       pcs.current.forEach((pc) => pc.close());
@@ -455,6 +506,11 @@ export function MeetRoom({ meet, meId, hangupHref }: { meet: MeetDto; meId: stri
       if (tr && p.fullName) tr.name = p.fullName;
     }
   }, [peers]);
+
+  useEffect(() => {
+    if (!meet.canHost || !wantRecRef.current || !recCtx.current) return;
+    hookStreams();
+  }, [remote, meet.canHost]);
 
   useEffect(() => {
     if (!ready) return;

@@ -12,6 +12,17 @@ const PUBLIC = [
   "/api/push/vapid",
   "/meet/join",
   "/api/meet/guest",
+  "/l",
+  "/api/l",
+  "/gate",
+  "/qr",
+  "/api/gate/board",
+  "/api/gate/media",
+  "/api/qr/board",
+  "/api/qr/image",
+  "/api/qr/media",
+  "/api/qr/poster",
+  "/api/qr/screen",
 ];
 
 export function middleware(req: NextRequest) {
@@ -43,12 +54,15 @@ export function middleware(req: NextRequest) {
     }
     const url = req.nextUrl.clone();
     url.pathname = "/login";
-    url.searchParams.set("next", pathname);
+    url.search = "";
+    url.searchParams.set("next", pathname + req.nextUrl.search);
     return NextResponse.redirect(url);
   }
   return pass();
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|sw.js).*)"],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|sw.js|api/library|api/data|api/upload|api/files|api/chat/.+/blobs|api/meet/.+/files|api/meet/.+/recording|api/admin/gate-bg).*)",
+  ],
 };

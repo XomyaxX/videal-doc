@@ -129,6 +129,7 @@ model User {
   dateChangeRequests TaskDateChange[]      @relation("DateChangeRequester")
   dateChangeDecisions TaskDateChange[]     @relation("DateChangeDecider")
   libraryItems      LibraryItem[]
+  libraryAcl        LibraryAcl[]
   skills            UserSkill[]
   jobsAuthored      Job[]              @relation("JobAuthor")
   jobMembers        JobMember[]
@@ -147,6 +148,10 @@ model User {
   inventory         InventoryItem[]
   clearanceSheets   ClearanceSheet[] @relation("ClearanceSubject")
   clearanceAuthored ClearanceSheet[] @relation("ClearanceAuthor")
+  tmcSheets         TmcSheet[]       @relation("TmcSubject")
+  tmcAuthored       TmcSheet[]       @relation("TmcAuthor")
+  inventoryAudits   InventoryAudit[] @relation("AuditSubject")
+  inventoryAuditsAuthored InventoryAudit[] @relation("AuditAuthor")
   chatIdentity      ChatIdentity?
   chatMembers       ChatMember[]
   chatMessages      ChatMessage[]
@@ -337,6 +342,7 @@ model InventoryItem {
   pcDisk     String    @default("")
   pcMb       String    @default("")
   note       String    @default("")
+  status     String    @default("ok")
   deletedAt  DateTime?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
@@ -363,6 +369,66 @@ model ClearanceSheet {
 
   @@index([userId])
   @@index([status])
+}
+
+model InventoryAudit {
+  id        String               @id @default(cuid())
+  number    String
+  userId    String
+  user      User                 @relation("AuditSubject", fields: [userId], references: [id])
+  authorId  String
+  author    User                 @relation("AuditAuthor", fields: [authorId], references: [id])
+  status    String               @default("open")
+  note      String               @default("")
+  closedAt  DateTime?
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+  lines     InventoryAuditLine[]
+
+  @@index([userId])
+  @@index([status])
+}
+
+model InventoryAuditLine {
+  id              String          @id @default(cuid())
+  auditId         String
+  audit           InventoryAudit  @relation(fields: [auditId], references: [id], onDelete: Cascade)
+  inventoryItemId String
+  title           String
+  invNo           String          @default("")
+  qty             Int             @default(1)
+  action          String          @default("")
+  toUserId        String          @default("")
+  note            String          @default("")
+  sortOrder       Int             @default(0)
+}
+
+model TmcSheet {
+  id             String    @id @default(cuid())
+  number         String
+  userId         String
+  user           User      @relation("TmcSubject", fields: [userId], references: [id])
+  authorId       String
+  author         User      @relation("TmcAuthor", fields: [authorId], references: [id])
+  note           String    @default("")
+  commissionJson String    @default("[]")
+  status         String    @default("open")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  lines          TmcLine[]
+
+  @@index([userId])
+}
+
+model TmcLine {
+  id              String   @id @default(cuid())
+  sheetId         String
+  sheet           TmcSheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  inventoryItemId String   @default("")
+  title           String
+  invNo           String   @default("")
+  qty             Int      @default(1)
+  sortOrder       Int      @default(0)
 }
 
 model ClearanceLine {
@@ -908,6 +974,12 @@ model AppSettings {
   prodDatesNeedApproval Boolean @default(false)
   currentEpisodeId String   @default("")
   officeCidrs      String   @default("")
+  gateKey          String    @default("")
+  gateToken        String    @default("")
+  gateExpiresAt    DateTime?
+  gateBgFile       String    @default("")
+  gateBgMime       String    @default("")
+  gateBgName       String    @default("")
   identifyUntil    DateTime?
   chatDek          String   @default("")
   chatBackup       String   @default("")
@@ -1159,15 +1231,36 @@ model LibraryItem {
   previewFileId String   @default("")
   absPath       String   @default("")
   uncPath       String   @default("")
+  parentId      String?
+  parent        LibraryItem?  @relation("LibraryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children      LibraryItem[] @relation("LibraryTree")
+  shareToken    String   @default("")
+  shareEnabled  Boolean  @default(false)
+  shareDownload Boolean  @default(true)
+  shareEdit     Boolean  @default(false)
+  shareCreate   Boolean  @default(false)
   authorId      String
   author        User     @relation(fields: [authorId], references: [id])
   deletedAt     DateTime?
   files         LibraryFile[]
   tasks         TaskLibraryItem[]
+  acl           LibraryAcl[]
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   @@index([kind, createdAt])
+  @@index([parentId])
+  @@index([shareToken])
+}
+
+model LibraryAcl {
+  itemId String
+  item   LibraryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  userId String
+  user   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([itemId, userId])
+  @@index([userId])
 }
 
 model LibraryFile {

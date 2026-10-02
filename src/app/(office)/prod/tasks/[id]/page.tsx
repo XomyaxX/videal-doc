@@ -26,7 +26,7 @@ import { TaskRename } from "./TaskRename";
 import { TaskTrash } from "./TaskTrash";
 import { TeamChat } from "@/components/TeamChat";
 import { allStageSort, pipelineKindLabel, taskPipelineKind } from "@/lib/prod-kinds";
-import { serializeLibrary } from "@/lib/library";
+import { filterVisibleLibrary, serializeLibrary } from "@/lib/library";
 import { USER_SAFE_ORG_SELECT, USER_SAFE_SELECT } from "@/lib/user-public";
 
 const STAGE_SORT = allStageSort();
@@ -291,9 +291,12 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
           <TaskLibrary
             taskId={task.id}
             canLead={lead}
-            items={task.libraryLinks
-              .filter((l) => !l.item.deletedAt)
-              .map((l) => serializeLibrary(l.item))}
+            items={(
+              await filterVisibleLibrary(
+                user,
+                task.libraryLinks.filter((l) => !l.item.deletedAt).map((l) => l.item),
+              )
+            ).map((item) => serializeLibrary(item))}
           />
           <Card className="bd-card">
             <h2 className="font-serif text-xl text-navy">Файлы</h2>

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "crypto";
 import { createReadStream, createWriteStream } from "fs";
-import { appendFile, mkdir, open, readdir, readFile, rm, stat, writeFile } from "fs/promises";
+import { mkdir, open, readdir, readFile, rm, stat, writeFile } from "fs/promises";
 import path from "path";
 import { pipeline } from "stream/promises";
 import { Transform } from "stream";
@@ -69,13 +69,14 @@ export function assertInside(root: string, abs: string) {
 
 export async function assemblePartFiles(dir: string, chunkTotal: number, maxBytes: number) {
   const dest = assertInside(dir, path.join(/* turbopackIgnore: true */ dir, "assembled.bin"));
+  await rm(dest, { force: true }).catch(() => null);
   let total = 0;
   for (let i = 0; i < chunkTotal; i++) {
     const p = assertInside(dir, path.join(/* turbopackIgnore: true */ dir, `${String(i).padStart(5, "0")}.part`));
-    const buf = await readFile(/* turbopackIgnore: true */ p);
-    total += buf.length;
+    const st = await stat(/* turbopackIgnore: true */ p);
+    total += st.size;
     if (total > maxBytes) throw new Error("Файл слишком большой");
-    await appendFile(/* turbopackIgnore: true */ dest, buf);
+    await pipeline(createReadStream(/* turbopackIgnore: true */ p), createWriteStream(/* turbopackIgnore: true */ dest, { flags: "a" }));
   }
   return { path: dest, size: total };
 }
@@ -265,7 +266,7 @@ export async function canReadStoredFile(user: SessionUser, fileId: string): Prom
     }),
     prisma.libraryFile.findFirst({
       where: { fileId, item: { deletedAt: null } },
-      select: { id: true },
+      select: { itemId: true },
     }),
     prisma.personDocument.findFirst({
       where: { fileId },
@@ -302,7 +303,12 @@ export async function canReadStoredFile(user: SessionUser, fileId: string): Prom
   if (groupAvatar) return true;
   if (signature) return signature.id === user.id || userCan(user, "users.view");
   if (libItem || libFile) {
-    return userCan(user, "prod.work") || userCan(user, "prod.lead") || userCan(user, "prod.manage");
+    if (user.roleCode === "remote") return false;
+    if (!(userCan(user, "prod.work") || userCan(user, "prod.lead") || userCan(user, "prod.manage"))) return false;
+    const itemId = libItem?.id || libFile?.itemId;
+    if (!itemId) return false;
+    const { libraryItemVisible } = await import("./library");
+    return libraryItemVisible(user, itemId);
   }
   if (personDoc) return canViewArchive(user, personDoc.user);
 
@@ -371,9 +377,12 @@ export async function canReadStoredFile(user: SessionUser, fileId: string): Prom
   if (meetByFile && canSeeMeeting(user, meetByFile)) return true;
   const libPrev = await prisma.libraryFile.findFirst({
     where: { previewFileId: fileId, item: { deletedAt: null } },
-    select: { id: true },
+    select: { itemId: true },
   });
-  if (libPrev && (userCan(user, "prod.work") || userCan(user, "prod.lead") || userCan(user, "prod.manage"))) return true;
+  if (libPrev && (userCan(user, "prod.work") || userCan(user, "prod.lead") || userCan(user, "prod.manage"))) {
+    const { libraryItemVisible } = await import("./library");
+    return libraryItemVisible(user, libPrev.itemId);
+  }
   const chatPrev = await prisma.prodChatFile.findFirst({
     where: { previewFileId: fileId },
     select: { message: { select: { scopeKey: true } } },

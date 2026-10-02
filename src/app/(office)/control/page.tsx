@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { PageHeader, Card, Button, Pill } from "@/components/ui";
 import { officeYmd, officeClock, fmtTimeOmsk, fmtDate } from "@/lib/dates";
 import { fullName } from "@/lib/names";
-import { flagLabel } from "@/lib/presence";
+import { flagLabel, leaveCoversYmd, leaveShort, LEAVE_TYPES, onTimesheet } from "@/lib/presence";
 import { FlagOk } from "./FlagOk";
 import { ControlSearch } from "./ControlSearch";
 import { USER_SAFE_SELECT } from "@/lib/user-public";
@@ -12,6 +12,7 @@ import { Avatar } from "@/components/Avatar";
 import { STAGE_LABEL, STATUS_LABEL, STATUS_PILL } from "@/lib/prod";
 import { taskTitle } from "@/lib/prod-server";
 import { stationOnline } from "@/lib/office-lan";
+import { GATE_SCREEN_URL } from "@/lib/gate";
 
 function addDays(ymd: string, n: number) {
   const [y, m, d] = ymd.split("-").map(Number);
@@ -83,10 +84,10 @@ export default async function ControlPage({
   const q = (sp.q || "").trim();
   const today = officeYmd();
 
-  const [flags, days, people, tasks, stations] = await Promise.all([
+  const [flags, days, people, tasks, stations, leaves] = await Promise.all([
     prisma.attendanceFlag.findMany({
       where: { ymd: { gte: from, lte: to }, resolvedAt: null },
-      include: { user: { select: USER_SAFE_SELECT } },
+      include: { user: { select: { ...USER_SAFE_SELECT, role: { select: { code: true } } } } },
       orderBy: [{ ymd: "desc" }, { createdAt: "desc" }],
     }),
     prisma.attendanceDay.findMany({
@@ -100,6 +101,7 @@ export default async function ControlPage({
         ...USER_SAFE_SELECT,
         department: { select: { name: true } },
         position: { select: { name: true } },
+        role: { select: { code: true } },
       },
     }),
     prisma.task.findMany({
@@ -126,11 +128,22 @@ export default async function ControlPage({
       take: 2000,
     }),
     prisma.officeStation.findMany({ select: { userId: true, lastSeenAt: true } }),
+    prisma.hrRequest.findMany({
+      where: { status: "accepted", type: { in: [...LEAVE_TYPES] } },
+      select: { authorId: true, type: true, payloadJson: true },
+    }),
   ]);
 
   const lanOnline = new Set(
     stations.filter((s) => stationOnline(s.lastSeenAt)).map((s) => s.userId),
   );
+
+  const leaveByUser = new Map<string, { type: string; payloadJson: string }[]>();
+  for (const row of leaves) {
+    const list = leaveByUser.get(row.authorId) || [];
+    list.push(row);
+    leaveByUser.set(row.authorId, list);
+  }
 
   const byUser = new Map<string, Map<string, (typeof days)[0]>>();
   for (const row of days) {
@@ -186,8 +199,14 @@ export default async function ControlPage({
     const person = t.assigneeId ? byId.get(t.assigneeId) : null;
     return hit(q, [person ? fullName(person) : "", STAGE_LABEL[t.stage], labelOf(t)]);
   });
-  const flagsHit = flags.filter((f) => hit(q, [fullName(f.user), flagLabel(f.kind), f.detail, f.ymd]));
-  const timeHit = people.filter((p) => hit(q, [fullName(p), p.login, p.position?.name, p.department?.name]));
+  const flagsOwn = flags.filter((f) =>
+    onTimesheet({ login: f.user.login, lastName: f.user.lastName, firstName: f.user.firstName, roleCode: f.user.role.code }),
+  );
+  const flagsHit = flagsOwn.filter((f) => hit(q, [fullName(f.user), flagLabel(f.kind), f.detail, f.ymd]));
+  const timePeople = people.filter((p) =>
+    onTimesheet({ login: p.login, lastName: p.lastName, firstName: p.firstName, roleCode: p.role.code }),
+  );
+  const timeHit = timePeople.filter((p) => hit(q, [fullName(p), p.login, p.position?.name, p.department?.name]));
 
   const ymds: string[] = [];
   for (let d = from; d <= to; d = addDays(d, 1)) ymds.push(d);
@@ -196,8 +215,8 @@ export default async function ControlPage({
     { id: "people", label: "Сотрудники", count: people.length },
     { id: "review", label: "На проверке", count: review.length },
     { id: "late", label: "Просрочки", count: late.length },
-    { id: "flags", label: "Отклонения", count: flags.length },
-    { id: "time", label: "Табель", count: people.length },
+    { id: "flags", label: "Отклонения", count: flagsOwn.length },
+    { id: "time", label: "Табель", count: timePeople.length },
   ];
 
   const placeholders: Record<Tab, string> = {
@@ -214,12 +233,20 @@ export default async function ControlPage({
     <div>
       <PageHeader
         title="Контроль"
-        subtitle="Отдельные разделы: кто что делает, проверки, просрочки, табель."
+        subtitle="Отдельные разделы: кто что делает, проверки, просрочки, табель. На телевизоре: videal-doc.ru/qr"
         actions={
           <div className="flex flex-wrap gap-2">
             <Button href={`/api/duty/pdf?kind=journal&week=${from}`} variant="secondary">
               Журнал PDF
             </Button>
+            <a
+              href={GATE_SCREEN_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-line bg-white px-4 py-2.5 text-[15px] font-semibold text-navy"
+            >
+              Экран на входе
+            </a>
             {showWeek ? (
               <>
                 <Button href={hrefFor({ tab, from: addDays(from, -7), to: addDays(to, -7), q })} variant="secondary">
@@ -427,13 +454,17 @@ export default async function ControlPage({
                     {ymds.map((d) => {
                       const row = byUser.get(p.id)?.get(d);
                       const rest = !officeClock(new Date(`${d}T12:00:00+06:00`)).weekdayWork;
+                      const away = (leaveByUser.get(p.id) || []).find((r) => leaveCoversYmd(r.type, r.payloadJson, d));
+                      const awayLabel = away ? leaveShort(away.type) : "";
                       return (
                         <td key={d} className={`px-1 py-2 ${rest ? "bg-paper-2/60 text-muted" : ""}`}>
                           {row?.inAt ? (
                             <span>
                               {fmtTimeOmsk(row.inAt)}
-                              {row.outAt ? `–${fmtTimeOmsk(row.outAt)}` : "–"}
+                              {row.outAt ? `–${fmtTimeOmsk(row.outAt)}${row.outSource === "forgot" ? " забыл" : ""}` : "–"}
                             </span>
+                          ) : awayLabel ? (
+                            <span className="text-navy">{awayLabel}</span>
                           ) : rest ? (
                             "—"
                           ) : (

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canLeadProd } from "@/lib/prod";
-import { attachLibraryToTask, canViewLibrary, serializeLibrary } from "@/lib/library";
+import { attachLibraryToTask, canViewLibrary, filterVisibleLibrary, serializeLibrary } from "@/lib/library";
 
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -22,7 +22,11 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     },
     orderBy: { createdAt: "asc" },
   });
-  return NextResponse.json({ rows: links.map((l) => serializeLibrary(l.item)) });
+  const visible = await filterVisibleLibrary(
+    session.user,
+    links.map((l) => l.item),
+  );
+  return NextResponse.json({ rows: visible.map(serializeLibrary) });
 }
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {

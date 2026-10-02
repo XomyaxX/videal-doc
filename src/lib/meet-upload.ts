@@ -1,3 +1,5 @@
+import { newUploadId } from "./upload-id";
+
 const CHUNK = 4 * 1024 * 1024;
 const LIMIT = 512 * 1024 * 1024;
 
@@ -12,7 +14,7 @@ export async function uploadChunkedFile(
     throw new Error(`«${file.name}» слишком большой (${(file.size / 1024 / 1024).toFixed(1)} МБ, лимит 512 МБ)`);
   }
   const total = Math.max(1, Math.ceil(file.size / CHUNK));
-  const uploadId = crypto.randomUUID();
+  const uploadId = newUploadId();
   const threeD = /\.(blend|fbx|obj|stl|abc)$/i.test(file.name);
   let last: Record<string, unknown> = {};
   for (let i = 0; i < total; i++) {

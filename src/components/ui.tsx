@@ -62,6 +62,13 @@ export function Button({ variant = "primary", className, href, children, ...prop
     className,
   );
   if (href) {
+    if (href.startsWith("/api/") || href.startsWith("http://") || href.startsWith("https://")) {
+      return (
+        <a href={href} className={cls}>
+          {children}
+        </a>
+      );
+    }
     return (
       <Link href={href} className={cls}>
         {children}

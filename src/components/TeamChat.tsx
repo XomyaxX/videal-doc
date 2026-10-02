@@ -4,11 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import { Button, ErrorText } from "@/components/ui";
 import { filesFromClipboard } from "@/lib/clipboard-files";
 import { ModelPreview } from "@/components/ModelPreview";
+import { DocxPreview } from "@/components/DocxPreview";
+import type { PreviewKind } from "@/lib/library-kinds";
 
 type ChatFile = {
   id: string;
   originalName: string;
-  preview: "image" | "pdf" | "video" | "model3d" | "none";
+  preview: PreviewKind;
   fileUrl: string;
   previewUrl?: string;
   thumbUrl: string;
@@ -41,6 +43,9 @@ function FilePreview({ file }: { file: ChatFile }) {
   }
   if (file.preview === "pdf") {
     return <iframe title={file.originalName} src={file.fileUrl} className="mt-2 h-56 w-full rounded-lg bg-white" />;
+  }
+  if (file.preview === "docx") {
+    return <DocxPreview src={file.fileUrl} compact className="mt-2" />;
   }
   if (file.preview === "model3d") {
     return <ModelPreview src={file.previewUrl || file.fileUrl} compact className="mt-2 overflow-hidden rounded-lg" />;

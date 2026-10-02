@@ -2,26 +2,55 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { Button, Empty, PageHeader, Pill } from "@/components/ui";
-import { LIBRARY_KINDS, LIBRARY_KIND_LABEL, canManageLibrary, canViewLibrary, serializeLibrary } from "@/lib/library";
-import { LibraryThumb, type LibraryCard } from "@/components/LibraryPreview";
+import { Button, PageHeader } from "@/components/ui";
+import {
+  LIBRARY_KINDS,
+  canManageLibrary,
+  canViewLibrary,
+  filterVisibleLibrary,
+  libraryCrumbs,
+  libraryItemVisible,
+  serializeLibrary,
+} from "@/lib/library";
+import { type LibraryCard } from "@/components/LibraryPreview";
+import { NewFolder } from "./NewFolder";
+import { LibraryDesk } from "./LibraryDesk";
+
+function libHref(opts: { folder?: string; q?: string; kind?: string }) {
+  const p = new URLSearchParams();
+  if (opts.folder) p.set("folder", opts.folder);
+  if (opts.q) p.set("q", opts.q);
+  if (opts.kind) p.set("kind", opts.kind);
+  const s = p.toString();
+  return s ? `/library?${s}` : "/library";
+}
 
 export default async function LibraryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; kind?: string }>;
+  searchParams: Promise<{ q?: string; kind?: string; folder?: string }>;
 }) {
   const user = await requireUser();
   if (!canViewLibrary(user)) redirect("/forbidden");
   const sp = await searchParams;
   const q = (sp.q || "").trim();
   const kind = sp.kind || "";
+  const folder = (sp.folder || "").trim();
   const manage = canManageLibrary(user);
+  if (folder) {
+    const here = await prisma.libraryItem.findFirst({
+      where: { id: folder, deletedAt: null },
+      select: { id: true, kind: true },
+    });
+    if (!here || here.kind !== "folder" || !(await libraryItemVisible(user, folder))) {
+      redirect("/library");
+    }
+  }
+  const crumbs = folder ? await libraryCrumbs(folder) : [];
 
   const rows = await prisma.libraryItem.findMany({
     where: {
       deletedAt: null,
-      ...(kind ? { kind } : {}),
       ...(q
         ? {
             OR: [
@@ -31,23 +60,39 @@ export default async function LibraryPage({
               { files: { some: { originalName: { contains: q } } } },
             ],
           }
+        : { parentId: folder || null }),
+      ...(kind
+        ? q
+          ? { kind }
+          : { OR: [{ kind: "folder" }, { kind }] }
         : {}),
     },
     include: {
       author: { select: { lastName: true, firstName: true, middleName: true } },
       files: { orderBy: { sortOrder: "asc" } },
+      _count: { select: { acl: true } },
     },
     orderBy: { createdAt: "desc" },
-    take: 200,
+    take: 400,
   });
-  const items = rows.map(serializeLibrary) as LibraryCard[];
+  const visible = await filterVisibleLibrary(user, rows);
+  const items = (visible.map(serializeLibrary) as LibraryCard[]).sort(
+    (a, b) => Number(Boolean(b.isFolder)) - Number(Boolean(a.isFolder)),
+  );
 
   return (
     <div>
       <PageHeader
         title="Хранилище"
-        subtitle="Файлы шоу: серии, референсы, материалы. Их потом прикрепляют к задаче."
-        actions={manage ? <Button href="/library/new">Добавить блок</Button> : null}
+        subtitle="Папки и файлы шоу. Ссылку можно отдать человеку без учётки — он откроет и скачает."
+        actions={
+          manage ? (
+            <span className="flex flex-wrap gap-2">
+              <NewFolder parentId={folder} />
+              <Button href={folder ? `/library/new?folder=${folder}` : "/library/new"}>Добавить блок</Button>
+            </span>
+          ) : null
+        }
       />
 
       <form className="mb-5 flex flex-wrap items-end gap-2">
@@ -60,61 +105,34 @@ export default async function LibraryPage({
             className="w-full rounded-xl border border-line bg-white px-3 py-2.5"
           />
         </label>
-        <input type="hidden" name="kind" value={kind} />
+        {kind ? <input type="hidden" name="kind" value={kind} /> : null}
+        {folder ? <input type="hidden" name="folder" value={folder} /> : null}
         <Button type="submit" variant="secondary">
           Найти
         </Button>
       </form>
 
-      <div className="mb-5 flex flex-wrap gap-2">
+      <div className="-mx-4 mb-5 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
         <Link
-          href={q ? `/library?q=${encodeURIComponent(q)}` : "/library"}
-          className={`rounded-xl px-3 py-2 text-sm font-semibold ${!kind ? "bg-navy !text-white" : "border border-line bg-white text-navy"}`}
+          href={libHref({ folder, q })}
+          className={`shrink-0 rounded-xl px-3 py-2 text-sm font-semibold ${!kind ? "bg-navy !text-white" : "border border-line bg-white text-navy"}`}
         >
           Все
         </Link>
-        {LIBRARY_KINDS.map((k) => {
-          const href = q ? `/library?kind=${k.id}&q=${encodeURIComponent(q)}` : `/library?kind=${k.id}`;
-          return (
-            <Link
-              key={k.id}
-              href={href}
-              className={`rounded-xl px-3 py-2 text-sm font-semibold ${
-                kind === k.id ? "bg-navy !text-white" : "border border-line bg-white text-navy"
-              }`}
-            >
-              {k.label}
-            </Link>
-          );
-        })}
+        {LIBRARY_KINDS.map((k) => (
+          <Link
+            key={k.id}
+            href={libHref({ folder, q, kind: k.id })}
+            className={`shrink-0 rounded-xl px-3 py-2 text-sm font-semibold ${
+              kind === k.id ? "bg-navy !text-white" : "border border-line bg-white text-navy"
+            }`}
+          >
+            {k.label}
+          </Link>
+        ))}
       </div>
 
-      {items.length === 0 ? (
-        <Empty
-          title="Пока пусто"
-          text={manage ? "Добавьте первый файл — логотип, концепт, сценарий или модель." : "Когда руководство положит материалы, они появятся здесь."}
-        />
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {items.map((item) => (
-            <Link key={item.id} href={item.href}>
-              <div className="overflow-hidden rounded-2xl border border-line bg-card shadow-[var(--shadow)] hover:border-gold">
-                <LibraryThumb item={item} className="h-40 w-full" />
-                <div className="p-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="font-serif text-xl text-navy">{item.title}</div>
-                    <Pill tone="draft">{item.kindLabel || LIBRARY_KIND_LABEL[item.kind]}</Pill>
-                  </div>
-                  <p className="mt-2 line-clamp-2 text-sm text-muted">{item.description}</p>
-                  <p className="mt-2 text-xs text-muted">
-                    {(item.fileCount ?? 0) > 1 ? `${item.fileCount} файлов` : item.originalName}
-                  </p>
-                </div>
-              </div>
-            </Link>
-          ))}
-        </div>
-      )}
+      <LibraryDesk items={items} folderId={folder} crumbs={crumbs} manage={manage} q={q} kind={kind} />
     </div>
   );
 }

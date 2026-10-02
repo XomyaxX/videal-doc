@@ -3,13 +3,14 @@ import { notFound, redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Button, Card, PageHeader, Pill } from "@/components/ui";
-import { LIBRARY_KIND_LABEL, canManageLibrary, canViewLibrary, serializeLibrary } from "@/lib/library";
+import { LIBRARY_KIND_LABEL, canManageLibrary, canViewLibrary, libraryItemVisible, serializeLibrary } from "@/lib/library";
 import { LibraryViewer, type LibraryCard } from "@/components/LibraryPreview";
 import { fmtDate } from "@/lib/dates";
 import { fullName } from "@/lib/names";
 import { STAGE_LABEL } from "@/lib/prod";
 import { DeleteLibrary } from "./DeleteLibrary";
 import { DeleteLibraryFile } from "./DeleteLibraryFile";
+import { ShareLink } from "../ShareLink";
 import { USER_SAFE_SELECT } from "@/lib/user-public";
 
 export default async function LibraryItemPage({ params }: { params: Promise<{ id: string }> }) {
@@ -29,6 +30,8 @@ export default async function LibraryItemPage({ params }: { params: Promise<{ id
     },
   });
   if (!row) notFound();
+  if (!(await libraryItemVisible(user, id))) notFound();
+  if (row.kind === "folder") redirect(`/library?folder=${row.id}`);
   const item = serializeLibrary(row) as LibraryCard;
   const manage = canManageLibrary(user);
 
@@ -39,20 +42,25 @@ export default async function LibraryItemPage({ params }: { params: Promise<{ id
         subtitle={row.description}
         actions={
           <div className="flex gap-2">
-            <Button href="/library" variant="secondary">
-              К хранилищу
+            <Button href={row.parentId ? `/library?folder=${row.parentId}` : "/library"} variant="secondary">
+              К папке
             </Button>
             {manage ? <DeleteLibrary id={row.id} /> : null}
           </div>
         }
       />
-      <div className="grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
-        <Card>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(18rem,0.7fr)]">
+        <Card className="min-w-0 overflow-hidden">
           <LibraryViewer item={item} />
         </Card>
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           <Card>
             <Pill tone="draft">{LIBRARY_KIND_LABEL[row.kind] || row.kind}</Pill>
+            {manage ? (
+              <div className="mt-3">
+                <ShareLink itemId={row.id} enabled={Boolean(row.shareEnabled)} token={row.shareEnabled ? row.shareToken : ""} />
+              </div>
+            ) : null}
             <dl className="mt-4 space-y-2 text-sm">
               <div>
                 <dt className="text-xs uppercase text-muted">Файлы</dt>
