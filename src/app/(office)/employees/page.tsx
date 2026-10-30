@@ -155,7 +155,16 @@ export default async function EmployeesPage({
       <PageHeader
         title="Сотрудники"
         subtitle="Люди студии. Написать — сразу в чат."
-        actions={manage ? <Button href="/employees/new">Новый сотрудник</Button> : null}
+        actions={
+          manage ? (
+            <span className="flex flex-wrap gap-2">
+              <Button href="/employees/guest-nda" variant="secondary">
+                NDA для гостя
+              </Button>
+              <Button href="/employees/new">Новый сотрудник</Button>
+            </span>
+          ) : null
+        }
       />
 
       <form className="mb-4 flex flex-wrap items-end gap-2" action="/employees">

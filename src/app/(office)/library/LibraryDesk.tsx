@@ -71,7 +71,7 @@ export function LibraryDesk({
   const selectedSet = useMemo(() => new Set(selected), [selected]);
   const canEdit = manage || Boolean(guest?.edit);
   const canCreate = manage || Boolean(guest?.create);
-  const canUpload = manage;
+  const canUpload = manage || Boolean(guest?.create);
   const canZip = !guest || guest.download;
   const destRoot = guest?.rootId || "";
   const batchUrl = guest ? `/api/l/${guest.token}/batch` : "/api/library/batch";
@@ -190,7 +190,7 @@ export function LibraryDesk({
       const title = parts[parts.length - 1] || "папка";
       const parentPath = parts.slice(0, -1).join("/");
       const parentFolderId: string = parentPath ? await ensureDir(parentPath) : parentId;
-      const folderRes = await fetch("/api/library/folder", {
+      const folderRes = await fetch(guest ? `/api/l/${guest.token}/folder` : "/api/library/folder", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, parentId: parentFolderId }),
@@ -214,6 +214,7 @@ export function LibraryDesk({
           title: titleFromFilename(fileName),
           kind: kind && libraryKindOk(kind) ? kind : guessLibraryKind(fileName),
           description: titleFromFilename(fileName),
+          endpoint: guest ? `/api/l/${guest.token}/chunk` : undefined,
         });
       }
       router.refresh();
@@ -507,7 +508,11 @@ export function LibraryDesk({
       {error ? <p className="mb-3 text-sm text-bad">{error}</p> : null}
       {busy ? <p className="mb-3 text-sm text-muted">Загрузка файлов…</p> : null}
       {canUpload && desktop ? (
-        <p className="mb-3 text-xs text-muted">Сюда можно перетащить любой файл: mp3, pdf, архив, видео — или нажать «Загрузить».</p>
+        <p className="mb-3 text-xs text-muted">
+          {guest
+            ? "Можно перетащить файлы или нажать «Загрузить». Учётка не нужна."
+            : "Сюда можно перетащить любой файл: mp3, pdf, архив, видео — или нажать «Загрузить»."}
+        </p>
       ) : null}
       {!desktop && selected.length > 0 ? (
         <div className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-30 mb-3 flex flex-wrap items-center gap-2 rounded-2xl border border-line bg-card p-2 shadow-[var(--shadow)]">

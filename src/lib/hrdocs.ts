@@ -1,8 +1,12 @@
+import { inferGender } from "./gender";
+
 export const HR_TYPES: {
   id: string;
   name: string;
   title: string;
-  fields: Array<"date" | "dateTo" | "from" | "to" | "reason" | "body" | "subject" | "basis">;
+  fields: Array<
+    "date" | "dateTo" | "from" | "to" | "reason" | "body" | "subject" | "basis" | "arrived" | "due" | "notifyReason" | "makeup"
+  >;
 }[] = [
   {
     id: "time_off",
@@ -41,6 +45,12 @@ export const HR_TYPES: {
     fields: ["from", "to", "reason"],
   },
   {
+    id: "late",
+    name: "Опоздание",
+    title: "Объяснительная записка об опоздании",
+    fields: ["date", "arrived", "due", "reason", "notifyReason", "makeup"],
+  },
+  {
     id: "explainer",
     name: "Объяснительная",
     title: "Объяснительная записка",
@@ -64,7 +74,7 @@ export const HR_STATUS: Record<string, { label: string; tone: "draft" | "wait" |
   draft: { label: "Черновик", tone: "draft" },
   signed: { label: "Скан приложен", tone: "wait" },
   review: { label: "У руководителя", tone: "wait" },
-  accepted: { label: "Принято", tone: "ok" },
+  accepted: { label: "Согласовано", tone: "ok" },
   rejected: { label: "Отклонено", tone: "bad" },
   rework: { label: "На доработке", tone: "warn" },
 };
@@ -100,7 +110,43 @@ export function ruDate(iso: string) {
   return `«${Number(d)}» ${months[mi] || m} ${y} г.`;
 }
 
-export function letterBody(type: string, p: Record<string, string>): string[] {
+function ruTime(t: string) {
+  const m = /^(\d{1,2}):(\d{2})/.exec(t || "");
+  if (!m) return "_____";
+  return `${m[1].padStart(2, "0")}:${m[2]}`;
+}
+
+function minutesLate(due: string, arrived: string) {
+  const a = /^(\d{1,2}):(\d{2})/.exec(arrived || "");
+  const d = /^(\d{1,2}):(\d{2})/.exec(due || "");
+  if (!a || !d) return 0;
+  return Number(a[1]) * 60 + Number(a[2]) - (Number(d[1]) * 60 + Number(d[2]));
+}
+
+function minutesWord(n: number) {
+  const abs = Math.abs(n);
+  const mod10 = abs % 10;
+  const mod100 = abs % 100;
+  if (mod10 === 1 && mod100 !== 11) return `${abs} минуту`;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${abs} минуты`;
+  return `${abs} минут`;
+}
+
+function makeupLine(date: string, from: string, to: string) {
+  const when = date ? ruDate(date) : "«___» __________ 20__ г.";
+  const a = from ? ruTime(from) : "_____";
+  const b = to ? ruTime(to) : "_____";
+  return `${when} с ${a} до ${b}.`;
+}
+
+export type LetterWho = {
+  gender?: string | null;
+  login?: string | null;
+  firstName?: string | null;
+  middleName?: string | null;
+};
+
+export function letterBody(type: string, p: Record<string, string>, who?: LetterWho): string[] {
   const basis = HR_BASIS.find((b) => b.id === p.basis)?.label || p.basis || "";
   switch (type) {
     case "time_off":
@@ -123,6 +169,25 @@ export function letterBody(type: string, p: Record<string, string>): string[] {
       return [
         `Прошу учесть период нетрудоспособности с ${ruDate(p.from)} по ${ruDate(p.to)}${p.reason ? ` (${p.reason})` : ""}.`,
       ];
+    case "late": {
+      const g = who?.gender === "m" || who?.gender === "f" ? who.gender : inferGender(who || {});
+      const pribyl = g === "f" ? "прибыла" : "прибыл";
+      const smogla = g === "f" ? "не смогла" : "не смог";
+      const mins = minutesLate(p.due, p.arrived);
+      const minsText = mins > 0 ? minutesWord(mins) : p.minutes || "_____ минут";
+      const lines = [
+        `${p.date ? ruDate(p.date) : "«__» ________ 20__ г."} я ${pribyl} на работу в ${ruTime(p.arrived)} вместо установленного времени начала рабочего дня — ${ruTime(p.due)}. Опоздание составило ${minsText}.`,
+        `Причина опоздания: ${p.reason || "________________"}.${
+          p.notifyReason ? ` Своевременно предупредить руководителя ${smogla} по причине ${p.notifyReason}.` : ""
+        }`,
+        "Приношу извинения за опоздание. Обязуюсь отработать пропущенное рабочее время в полном объёме в следующие даты:",
+        makeupLine(p.makeup1Date, p.makeup1From, p.makeup1To),
+        makeupLine(p.makeup2Date, p.makeup2From, p.makeup2To),
+        makeupLine(p.makeup3Date, p.makeup3From, p.makeup3To),
+        "В дальнейшем обязуюсь соблюдать установленный режим рабочего времени и своевременно сообщать о возможных задержках.",
+      ];
+      return lines;
+    }
     case "explainer":
       return [
         p.date ? `По факту события ${ruDate(p.date)} сообщаю следующее.` : "Сообщаю следующее.",

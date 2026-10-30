@@ -24,7 +24,7 @@ import {
   toUnc,
   type ProdStatus,
 } from "./prod";
-import { assertInside } from "./files";
+import { assertInside, fileRoot } from "./files";
 import type { SessionUser } from "./types";
 import type { Prisma } from "@prisma/client";
 import { currentEpisodeId, taskScopeKey } from "./current-episode";
@@ -76,7 +76,7 @@ export function taskListWhere(
   scope: "mine" | "dept" | "all" = "mine",
 ): Prisma.TaskWhereInput {
   const work = { status: { in: [...WORK_STATUSES] }, deletedAt: null };
-  const mine = [{ assigneeId: user.id }, { helperId: user.id }];
+  const mine = [{ assigneeId: user.id }, { helperId: user.id }, { crew: { some: { userId: user.id } } }];
   if (scope === "mine" || !canLeadProd(user)) {
     return { ...work, OR: mine };
   }
@@ -675,13 +675,24 @@ export async function saveProdFile(opts: {
   });
   if (!task) throw new Error("Задача не найдена");
   if (task.deletedAt) throw new Error("Задача удалена — сначала восстановите");
-  if (!canWorkTask(opts.user, task.assigneeId, task.helperId) && !canLeadProd(opts.user, task.stage, task.assignee?.department?.name)) {
+  const pipe = task.kind === "pipe";
+  if (pipe) {
+    const { canAccessPipeTask } = await import("./pipe-server");
+    if (!(await canAccessPipeTask(opts.user, task.id))) throw new Error("Нет права прикреплять файл");
+  } else if (!canWorkTask(opts.user, task.assigneeId, task.helperId) && !canLeadProd(opts.user, task.stage, task.assignee?.department?.name)) {
     throw new Error("Нет права прикреплять файл");
   }
   if (opts.buffer.length > opts.maxBytes) throw new Error("Файл слишком большой");
   const ext = path.extname(opts.originalName).toLowerCase();
-  if (!ALLOWED_EXT.has(ext)) throw new Error("Для отчёта нужны mp4, png, jpg или pdf — blend кладём ссылкой");
-  const dir = task.diskDir || `${shareRoot()}/Data`;
+  const blocked = new Set([".exe", ".bat", ".cmd", ".com", ".msi", ".dll", ".sh", ".ps1", ".js", ".vbs", ".scr"]);
+  if (pipe) {
+    if (!ext || blocked.has(ext)) throw new Error("Этот тип файла нельзя прикрепить");
+  } else if (!ALLOWED_EXT.has(ext)) {
+    throw new Error("Для отчёта нужны mp4, png, jpg или pdf — blend кладём ссылкой");
+  }
+  const dir = pipe
+    ? path.join(fileRoot(), "pipe", task.id)
+    : task.diskDir || `${shareRoot()}/Data`;
   await mkdir(dir, { recursive: true });
   const stamp = new Date().toISOString().slice(0, 10);
   const login = opts.user.login.replace(/[^a-z0-9._-]/gi, "_");

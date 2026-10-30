@@ -13,7 +13,8 @@ export function ProdNav({
   const path = usePathname();
   const items = [
     { href: "/prod", label: "Мои задачи", match: (p: string) => p === "/prod" },
-    { href: "/prod/pipeline", label: "Пайплайн", match: (p: string) => p.startsWith("/prod/pipeline") },
+    { href: "/prod/pipeline", label: "Пайплайн", match: (p: string) => p.startsWith("/prod/pipeline") && !p.startsWith("/prod/pipeline/series") },
+    { href: "/prod/pipeline/series", label: "Серии", match: (p: string) => p.startsWith("/prod/pipeline/series") },
     { href: "/prod/board", label: "Доска", match: (p: string) => p.startsWith("/prod/board") },
     ...(canCreate
       ? [{ href: "/prod/trash", label: "Удалённые", match: (p: string) => p.startsWith("/prod/trash") }]

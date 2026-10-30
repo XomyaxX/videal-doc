@@ -67,13 +67,21 @@ export async function siblingChatTasks(scopeKey: string) {
 export async function canSeeTaskChat(user: SessionUser, taskId: string) {
   const task = await loadChatTask(taskId);
   if (!task) return false;
+  if (task.kind === "pipe") {
+    const { canAccessPipeTask } = await import("./pipe-server");
+    return canAccessPipeTask(user, taskId);
+  }
   return canSeeProdTask(user, task);
 }
 
 export async function canWriteTaskChat(user: SessionUser, taskId: string) {
-  if (canManageProd(user) || canLeadProd(user)) return true;
   const task = await loadChatTask(taskId);
   if (!task) return false;
+  if (task.kind === "pipe") {
+    const { canAccessPipeTask } = await import("./pipe-server");
+    return canAccessPipeTask(user, taskId);
+  }
+  if (canManageProd(user) || canLeadProd(user)) return true;
   return task.assigneeId === user.id || task.helperId === user.id;
 }
 

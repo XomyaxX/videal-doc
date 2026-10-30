@@ -6,6 +6,7 @@ import { nextNumber } from "@/lib/sequence";
 import { hrType } from "@/lib/hrdocs";
 import { isHrAddressee } from "@/lib/leaders";
 import { archiveHrLetter } from "@/lib/archive";
+import { notifyHrSubmitted } from "@/lib/hr-submit";
 import { USER_SAFE_SELECT } from "@/lib/user-public";
 
 export async function GET(req: NextRequest) {
@@ -51,10 +52,11 @@ export async function POST(req: NextRequest) {
       title: spec.title,
       authorId: session.user.id,
       managerId,
-      status: "draft",
+      status: "review",
       payloadJson: JSON.stringify(payload),
     },
   });
   await archiveHrLetter(created.id);
+  await notifyHrSubmitted(created, session.user.id);
   return NextResponse.json({ id: created.id });
 }

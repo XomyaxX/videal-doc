@@ -226,6 +226,10 @@ export async function canReadStoredFile(user: SessionUser, fileId: string): Prom
   const rec = await prisma.storedFile.findUnique({ where: { id: fileId }, select: { id: true, createdById: true } });
   if (!rec) return false;
   if (rec.createdById === user.id) return true;
+  if (userCan(user, "users.manage")) {
+    const guestNda = await prisma.guestNda.findFirst({ where: { fileId }, select: { id: true } });
+    if (guestNda) return true;
+  }
 
   const [doc, signed, receipt, hr, fund, purchase, purchaseExtra, purchaseReqFile, libItem, libFile, personDoc, photo, signature, org, jobFile, groupAvatar, revision] = await Promise.all([
     prisma.document.findFirst({

@@ -1,5 +1,14 @@
 import { rateLimit } from "../login-guard";
-import { allowedPaths, introAnswer, rankCards, VALERA_NONE, visibleCards, type ValeraCard } from "./cards";
+import {
+  allowedPaths,
+  introAnswer,
+  pickCards,
+  rankCards,
+  routingMap,
+  VALERA_NONE,
+  visibleCards,
+  type ValeraCard,
+} from "./cards";
 
 export const VALERA_BUSY = "Валера занят, повтори через минуту.";
 export const VALERA_LATER = "Развёрнутый ответ придёт позже.";
@@ -21,6 +30,7 @@ export function buildPrompt(cards: ValeraCard[]) {
     .join("\n\n");
   return [
     "Ты Валера AI, помощник сайта Видеал.Док.",
+    routingMap(cards),
     "Выбери один раздел, который отвечает на вопрос.",
     "В ответе напиши только его ссылку из поля «Куда» и больше ничего.",
     "Не добавляй другие разделы, людей, суммы, пароли и адреса.",
@@ -36,6 +46,7 @@ export function buildTalkPrompt(cards: ValeraCard[]) {
     .join("\n");
   return [
     "Ты Валера AI, помощник сотрудника на сайте Видеал.Док. Отвечай по-русски, обычным текстом, без звёздочек.",
+    routingMap(cards),
     "Если просят текст, первая строка ответа — сам текст в кавычках «». Потом одна строка, куда его вставить.",
     "Отвечай на сам вопрос. Не подменяй просьбу написать текст объяснением, куда нажать.",
     "Если просят придумать, написать или сформулировать текст — дай готовый текст, который можно скопировать.",
@@ -43,7 +54,7 @@ export function buildTalkPrompt(cards: ValeraCard[]) {
     "Предыдущие реплики — это продолжение разговора. Слова «там» и «это» относятся к ним.",
     "Ты не видишь базу, чужие чаты, документы, суммы и события на сегодня. Не выдумывай встречи, время, проекты и имена. Если факта нет, черновик — короткое приветствие и просьба коллегам дописать, что у них сегодня.",
     "Других разделов нет. Если вопрос про закрытую возможность, ответь ровно: В твоём меню этого нет. Спроси про раздел, который у тебя открыт: куда нажать и что заполнить.",
-    "Не выдумывай кнопки. Не пиши пароли и личные данные.",
+    "Не выдумывай кнопки. Не пиши пароли и личные данные. Не отправляй за файлами проекта в Документы или к сотрудникам.",
     "",
     lines,
   ].join("\n");
@@ -56,6 +67,7 @@ export function buildUnknownPrompt(cards: ValeraCard[]) {
     .join("\n");
   return [
     "Ты Валера AI, помощник сайта Видеал.Док.",
+    routingMap(cards),
     "Готовой подсказки нет. Ниже только разделы этого человека. Других разделов не существует.",
     "Если вопрос прямо про один раздел, ответь только его ссылкой.",
     "Не угадывай похожий раздел. Если сомневаешься, ответь ровно: НЕТ",
@@ -321,6 +333,11 @@ function isGreeting(question: string) {
   return /^(привет|здравствуй|здравствуйте|добрый день|доброе утро|кто ты|что умеешь|помощь|с чего начать)$/.test(text);
 }
 
+function isWhereQuestion(question: string) {
+  const text = question.toLowerCase().replace(/ё/g, "е");
+  return /где |куда |найти |лежат |лежит |в каком |открой раздел/.test(text);
+}
+
 function leaksHidden(text: string, cards: ValeraCard[]) {
   const blob = cards.map((card) => `${card.href} ${card.links.join(" ")} ${card.title} ${card.body}`).join("\n").toLowerCase();
   const norm = text.toLowerCase();
@@ -356,18 +373,30 @@ export async function askValera(user: AskUser, questionRaw: string, history: His
   }
   const open = visibleCards(user).filter((card) => card.id !== "start");
   history = history.map((item) => ({ ...item, text: withoutLater(String(item.text || "")) })).filter((item) => item.text);
-  const asked = composeQuestion(question);
-  const held = await withModel(() => askModel(open, asked, history, buildTalkPrompt(open), 480));
-  if (!held.ok) return { error: held.error, status: held.status };
-  let text = cleanTalk(held.value);
-  if (isCompose(question) && !hasDraft(text)) {
-    const again = await withModel(() =>
-      askModel(open, `${asked}\nВ ответе обязательно есть текст в кавычках «».`, history, buildTalkPrompt(open), 480),
-    );
-    if (again.ok) text = cleanTalk(again.value);
+  if (isGreeting(question)) return { answer: introAnswer(user) };
+
+  if (isCompose(question)) {
+    const asked = composeQuestion(question);
+    const held = await withModel(() => askModel(open, asked, history, buildTalkPrompt(open), 480));
+    if (!held.ok) return { error: held.error, status: held.status };
+    let text = cleanTalk(held.value);
+    if (!hasDraft(text)) {
+      const again = await withModel(() =>
+        askModel(open, `${asked}\nВ ответе обязательно есть текст в кавычках «».`, history, buildTalkPrompt(open), 480),
+      );
+      if (again.ok) text = cleanTalk(again.value);
+    }
+    if (!text || leaksHidden(text, open)) return { answer: VALERA_NONE };
+    return { answer: text };
   }
-  if (!text || leaksHidden(text, open)) return { answer: VALERA_NONE };
-  return { answer: text };
+
+  const ranked = pickCards(user, question, 2);
+  if (ranked[0]) return finish(ranked[0], question, history);
+
+  const chosen = await chooseCard(open, question, history, buildUnknownPrompt(open));
+  if (!chosen.ok) return { error: chosen.error, status: chosen.status };
+  if (chosen.card) return finish(chosen.card, question, history);
+  return { answer: VALERA_NONE };
 }
 
 function isCompose(question: string) {
@@ -395,7 +424,7 @@ function cleanTalk(text: string) {
 
 async function finish(card: ValeraCard, question: string, history: HistoryItem[]) {
   const fallback = answerText(card, question);
-  if (!isConcreteQuestion(question, card)) return { answer: fallback };
+  if (isWhereQuestion(question) || !isConcreteQuestion(question, card)) return { answer: fallback };
   const written = await writeConcrete(card, question, history);
   if (!written || !writerAnswerOk(written, card, question)) return { answer: fallback };
   return { answer: written };

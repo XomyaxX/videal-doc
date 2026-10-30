@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { arriveJokeActive } from "@/lib/arrive-joke";
 import { gateTokenValid } from "@/lib/gate";
 import { markIn, markOut, requestClientIp } from "@/lib/presence";
 
@@ -28,5 +29,6 @@ export async function POST(req: NextRequest) {
     inAt: res.day.inAt,
     outAt: res.day.outAt,
     outSource: res.day.outSource,
+    joke: kind === "in" && arriveJokeActive(),
   });
 }

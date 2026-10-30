@@ -38,7 +38,10 @@ export type LetterPdfData = {
   toName: string;
   fromRole: string;
   fromName: string;
+  fromEmail?: string;
+  fromPhone?: string;
   title: string;
+  subtitle?: string;
   paragraphs: string[];
   number: string;
   signDay: string;
@@ -57,9 +60,14 @@ export function LetterDocument({ data }: { data: LetterPdfData }) {
           <Text>от</Text>
           <Text>{data.fromRole || "________________"}</Text>
           <Text>{data.fromName}</Text>
-          <Text style={s.hint}>(должность, ФИО)</Text>
+          {data.fromEmail ? <Text>{data.fromEmail}</Text> : null}
+          {data.fromPhone ? <Text>{data.fromPhone}</Text> : null}
+          <Text style={s.hint}>(должность, ФИО{data.fromEmail || data.fromPhone ? ", почта, телефон" : ""})</Text>
         </View>
         <Text style={s.title}>{data.title}</Text>
+        {data.subtitle ? (
+          <Text style={{ fontSize: 11, textAlign: "center", marginTop: -10, marginBottom: 16 }}>{data.subtitle}</Text>
+        ) : null}
         {data.paragraphs.map((p, i) => (
           <Text key={i} style={s.p}>
             {p}

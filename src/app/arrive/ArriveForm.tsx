@@ -31,6 +31,7 @@ export function ArriveForm({
   const [left, setLeft] = useState(outAt);
   const [leftForgot, setLeftForgot] = useState(forgot);
   const [note, setNote] = useState("");
+  const [joke, setJoke] = useState(false);
 
   async function act(kind: "in" | "out") {
     setBusy(kind);
@@ -51,10 +52,21 @@ export function ArriveForm({
     setLeft(data.outAt || null);
     setLeftForgot(data.outSource === "forgot");
     setNote(data.already ? "Эта отметка уже стоит." : kind === "in" ? "Приход отмечен." : "Уход отмечен.");
+    if (kind === "in" && data.joke) setJoke(true);
   }
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4 py-10">
+      {joke ? (
+        <button
+          type="button"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black p-3"
+          onClick={() => setJoke(false)}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/api/gate/joke" alt="" className="max-h-full max-w-full rounded-2xl object-contain" />
+        </button>
+      ) : null}
       <Card>
         <p className="text-sm text-muted">Отметка у входа</p>
         <h1 className="mt-1 font-serif text-3xl text-navy">{name}</h1>
@@ -80,6 +92,14 @@ export function ArriveForm({
         )}
         {note ? <p className="mt-4 text-sm text-muted">{note}</p> : null}
         {error ? <p className="mt-4 text-sm text-bad">{error}</p> : null}
+        {error.includes("Нужно войти") ? (
+          <a href="/login/2fa" className="mt-4 block text-sm font-semibold text-navy underline">
+            Завершить вход
+          </a>
+        ) : null}
+        <a href="/" className="mt-4 block text-sm text-muted underline">
+          На главную
+        </a>
       </Card>
     </main>
   );

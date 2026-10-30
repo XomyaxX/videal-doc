@@ -19,7 +19,7 @@ export default async function NewStatementPage() {
     <div>
       <PageHeader
         title="Новое заявление"
-        subtitle="Система заполняет шапку. Вам — тип, кому, даты или текст. Потом печать и скан с подписью."
+        subtitle="Система заполняет шапку. Вам — тип, кому, даты или текст. Заявление сразу уйдёт на согласование; печать и подпись — после."
       />
       <StatementForm
         managers={managers.map((m) => ({

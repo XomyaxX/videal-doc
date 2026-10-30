@@ -120,8 +120,8 @@ export function ShareDialog({
         <label className="mt-3 flex items-start gap-2 text-sm">
           <input type="checkbox" checked={create} onChange={(e) => setCreate(e.target.checked)} className="mt-0.5" />
           <span>
-            <span className="font-semibold">Создавать папки</span>
-            <span className="block text-muted">Новые папки внутри этой ссылки</span>
+            <span className="font-semibold">Добавлять</span>
+            <span className="block text-muted">Новые папки и файлы без учётки</span>
           </span>
         </label>
         {enabled && token ? (

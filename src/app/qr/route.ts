@@ -36,25 +36,32 @@ export async function GET(req: NextRequest) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="refresh" content="120" id="rf">
-<title>Вход</title>
+<title>Видеал.Док — вход</title>
 <style>
 html, body { margin: 0; height: 100%; background: #16324f; }
-.vd-gate { position: fixed; top: 0; right: 0; bottom: 0; left: 0; overflow: hidden; background: #16324f; color: #fff; font-family: Arial, Helvetica, sans-serif; }
+.vd-gate { position: fixed; top: 0; right: 0; bottom: 0; left: 0; overflow: hidden; background: #16324f; color: #16324f; font-family: Arial, Helvetica, sans-serif; }
 #m, #m img, #m video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
-#m img { z-index: 2; }
-#m video { z-index: 1; }
-.vd-gate-side { position: absolute; top: 0; right: 0; bottom: 0; width: 42%; z-index: 4; overflow: hidden; background: #16324f; background: rgba(22,50,79,0.88); text-align: center; }
-.vd-gate-clock { position: absolute; top: 4%; left: 4%; right: 4%; height: 12%; margin: 0; overflow: hidden; font-size: 64px; line-height: 1; font-weight: 700; }
-.vd-gate-caption { position: absolute; top: 16%; left: 5%; right: 5%; height: 12%; margin: 0; overflow: hidden; font-size: 22px; line-height: 1.25; }
-.vd-gate-qrbox { position: absolute; top: 29%; left: 12%; right: 10%; height: 48%; overflow: hidden; background: #fff; }
+#m img { z-index: 2; object-fit: cover; }
+#m video { z-index: 1; object-fit: cover; }
+.vd-gate-side { position: absolute; top: 0; right: 0; bottom: 0; width: 40%; z-index: 4; overflow: hidden; background: #f3eee6; text-align: center; }
+.vd-gate-side:before { content: ""; position: absolute; top: 0; left: 0; bottom: 0; width: 6px; background: #a57c3b; }
+.vd-gate-gold { position: absolute; top: 0; left: 0; right: 0; height: 8px; background: #a57c3b; }
+.vd-gate-stamp { position: absolute; top: 4%; left: 8%; right: 6%; height: 4%; margin: 0; overflow: hidden; font-family: Georgia, "Times New Roman", Times, serif; font-size: 15px; letter-spacing: 0.12em; color: #a57c3b; }
+.vd-gate-title { position: absolute; top: 8%; left: 6%; right: 6%; height: 7%; margin: 0; overflow: hidden; font-family: Georgia, "Times New Roman", Times, serif; font-size: 34px; line-height: 1.1; font-weight: 700; color: #16324f; }
+.vd-gate-clock { position: absolute; top: 15%; left: 6%; right: 6%; height: 11%; margin: 0; overflow: hidden; font-family: Georgia, "Times New Roman", Times, serif; font-size: 72px; line-height: 1; font-weight: 700; color: #16324f; }
+.vd-gate-caption { position: absolute; top: 27%; left: 8%; right: 8%; height: 8%; margin: 0; overflow: hidden; font-size: 20px; line-height: 1.3; color: #6b6258; }
+.vd-gate-qrbox { position: absolute; top: 36%; left: 12%; right: 10%; height: 46%; overflow: hidden; background: #fffcf7; border: 3px solid #a57c3b; }
 .vd-gate-qrbox img { display: block; height: 84%; width: auto; max-width: 84%; margin: 8% auto 0; border: 0; }
-.vd-gate-note { position: absolute; top: 80%; left: 5%; right: 5%; height: 14%; margin: 0; overflow: hidden; font-size: 16px; line-height: 1.3; color: #d5deea; }
+.vd-gate-note { position: absolute; top: 84%; left: 8%; right: 8%; height: 12%; margin: 0; overflow: hidden; font-size: 16px; line-height: 1.35; color: #6b6258; }
 </style>
 </head>
 <body>
 <main class="vd-gate">
 <div id="m" data-src="${videoSrc}" data-poster="${posterSrc}">${posterSrc ? `<img src="${posterSrc}" alt="">` : ""}</div>
 <section class="vd-gate-side">
+<div class="vd-gate-gold"></div>
+<p class="vd-gate-stamp">ООО «Видеаль Медиа»</p>
+<p class="vd-gate-title">Видеал.Док</p>
 <p class="vd-gate-clock" id="c">${clock()}</p>
 <p class="vd-gate-caption">Отсканируйте, чтобы отметить приход или уход</p>
 <div class="vd-gate-qrbox"><img id="q" src="${qrSrc}" alt="QR для отметки прихода и ухода"></div>

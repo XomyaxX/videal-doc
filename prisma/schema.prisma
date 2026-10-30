@@ -120,8 +120,10 @@ model User {
   hrRequests        HrRequest[]         @relation("HrAuthor")
   hrInbox           HrRequest[]         @relation("HrManager")
   personDocuments   PersonDocument[]
+  guestNdas         GuestNda[]           @relation("GuestNdaAuthor")
   assignedTasks     Task[]                 @relation("TaskAssignee")
   helperTasks       Task[]                 @relation("TaskHelper")
+  crewTasks         TaskCrew[]             @relation("TaskCrew")
   assignedByTasks   Task[]                 @relation("TaskAssignedBy")
   taskEvents        TaskEvent[]
   uploadedTaskFiles TaskFile[]             @relation("TaskFileUploader")
@@ -130,6 +132,7 @@ model User {
   dateChangeDecisions TaskDateChange[]     @relation("DateChangeDecider")
   libraryItems      LibraryItem[]
   libraryAcl        LibraryAcl[]
+  trainingItems     TrainingItem[]      @relation("TrainingAuthor")
   skills            UserSkill[]
   jobsAuthored      Job[]              @relation("JobAuthor")
   jobMembers        JobMember[]
@@ -171,6 +174,9 @@ model User {
   meetingPeers      MeetingPeer[]
   meetingViewers    MeetingViewer[]
   meetingChats      MeetingChatMessage[]
+  pipeProjectsAuthored PipeProject[]       @relation("PipeProjectAuthor")
+  pipeGroupMembers     PipeGroupMember[]
+  pipeGridSeats        PipeProjectWorker[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -931,6 +937,62 @@ model PersonDocument {
   @@index([kind])
 }
 
+model GuestNda {
+  id          String   @id @default(cuid())
+  lastName    String
+  firstName   String
+  middleName  String   @default("")
+  gender      String   @default("")
+  birthDate   DateTime?
+  fileId      String   @default("")
+  archivePath String   @default("")
+  metaJson    String   @default("{}")
+  authorId    String
+  author      User     @relation("GuestNdaAuthor", fields: [authorId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([createdAt])
+  @@index([lastName])
+}
+
+model TrainingItem {
+  id          String    @id @default(cuid())
+  title       String
+  description String    @default("")
+  kind        String    @default("file")
+  parentId    String?
+  parent      TrainingItem?  @relation("TrainingTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children    TrainingItem[] @relation("TrainingTree")
+  authorId    String
+  author      User      @relation("TrainingAuthor", fields: [authorId], references: [id])
+  deletedAt   DateTime?
+  deletedById String    @default("")
+  files       TrainingFile[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([parentId])
+  @@index([deletedAt, createdAt])
+}
+
+model TrainingFile {
+  id           String       @id @default(cuid())
+  itemId       String
+  item         TrainingItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  originalName String
+  mimeType     String       @default("")
+  size         String       @default("0")
+  relPath      String
+  sortOrder    Int          @default(0)
+  deletedAt    DateTime?
+  deletedById  String       @default("")
+  createdAt    DateTime     @default(now())
+
+  @@index([itemId])
+  @@index([deletedAt])
+}
+
 model Sequence {
   key   String @id
   value Int    @default(0)
@@ -1103,7 +1165,15 @@ model Task {
   dateChanges    TaskDateChange[]
   libraryLinks   TaskLibraryItem[]
   skills         TaskSkill[]
+  crew           TaskCrew[]
   peerLinks      ChatTask[]
+  pipeProjectId  String?
+  pipeProject    PipeProject? @relation(fields: [pipeProjectId], references: [id], onDelete: Cascade)
+  pipeChapterId  String?
+  pipeChapter    PipeChapter? @relation(fields: [pipeChapterId], references: [id], onDelete: SetNull)
+  pipeGroupId    String?
+  pipeGroup      PipeGroup?   @relation(fields: [pipeGroupId], references: [id], onDelete: SetNull)
+  projectUrl     String    @default("")
   deletedAt      DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
@@ -1115,6 +1185,73 @@ model Task {
   @@index([scopeKey])
   @@index([jobId])
   @@index([episodeId])
+  @@index([pipeProjectId])
+  @@index([pipeChapterId])
+}
+
+model PipeProject {
+  id          String        @id @default(cuid())
+  dept        String
+  name        String
+  published   Boolean       @default(false)
+  createdById String
+  createdBy   User          @relation("PipeProjectAuthor", fields: [createdById], references: [id])
+  chapters    PipeChapter[]
+  groups      PipeGroup[]
+  workers     PipeProjectWorker[]
+  tasks       Task[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([dept, createdAt])
+}
+
+model PipeChapter {
+  id        String      @id @default(cuid())
+  projectId String
+  project   PipeProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name      String
+  sortOrder Int         @default(0)
+  tasks     Task[]
+  groups    PipeGroup[]
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@index([projectId, sortOrder])
+}
+
+model PipeGroup {
+  id        String            @id @default(cuid())
+  projectId String
+  project   PipeProject       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  chapterId String?
+  chapter   PipeChapter?      @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  name      String
+  sortOrder Int               @default(0)
+  members   PipeGroupMember[]
+  tasks     Task[]
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@index([chapterId, sortOrder])
+}
+
+model PipeGroupMember {
+  groupId String
+  group   PipeGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId  String
+  user    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, userId])
+}
+
+model PipeProjectWorker {
+  projectId String
+  project   PipeProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, userId])
 }
 
 model TaskSkill {
@@ -1124,6 +1261,15 @@ model TaskSkill {
   skill   Skill  @relation(fields: [skillId], references: [id], onDelete: Cascade)
 
   @@id([taskId, skillId])
+}
+
+model TaskCrew {
+  taskId String
+  task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId String
+  user   User @relation("TaskCrew", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, userId])
 }
 
 model Job {
@@ -1226,7 +1372,7 @@ model LibraryItem {
   description   String   @default("")
   originalName  String   @default("")
   mimeType      String   @default("")
-  size          Int      @default(0)
+  size          BigInt   @default(0)
   fileId        String   @default("")
   previewFileId String   @default("")
   absPath       String   @default("")
@@ -1269,7 +1415,7 @@ model LibraryFile {
   item         LibraryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
   originalName String
   mimeType     String      @default("")
-  size         Int         @default(0)
+  size         BigInt      @default(0)
   fileId        String      @default("")
   previewFileId String      @default("")
   absPath       String      @default("")

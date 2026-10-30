@@ -190,6 +190,12 @@ function safePart(name: string) {
   return safeFilePart(name);
 }
 
+function asSize(v: bigint | number | string | null | undefined) {
+  if (typeof v === "bigint") return Number(v);
+  if (typeof v === "string") return Number(v) || 0;
+  return v || 0;
+}
+
 async function storeWebFile(opts: {
   buffer: Buffer;
   originalName: string;
@@ -435,7 +441,7 @@ function createLibraryRow(opts: {
 }
 
 export async function saveLibraryItemFromDisk(opts: {
-  user: SessionUser;
+  user: { id: string };
   title: string;
   kind: string;
   description: string;
@@ -557,7 +563,7 @@ export async function removeLibraryFile(itemId: string, fileId: string): Promise
       data: {
         originalName: cover.originalName,
         mimeType: cover.mimeType,
-        size: remaining.reduce((s, f) => s + f.size, 0),
+        size: remaining.reduce((s, f) => s + asSize(f.size), 0),
         fileId: cover.fileId,
       },
     });
@@ -696,7 +702,7 @@ type FileRow = {
   id: string;
   originalName: string;
   mimeType: string;
-  size: number;
+  size: number | bigint;
   fileId: string;
   previewFileId?: string;
   absPath: string;
@@ -707,7 +713,7 @@ function packFiles(row: {
   id: string;
   originalName: string;
   mimeType: string;
-  size: number;
+  size: number | bigint;
   fileId: string;
   absPath?: string;
   uncPath: string;
@@ -720,7 +726,7 @@ function packFiles(row: {
         id: row.id,
         originalName: row.originalName,
         mimeType: row.mimeType,
-        size: row.size,
+        size: asSize(row.size),
         fileId: row.fileId,
         absPath: row.absPath || "",
         uncPath: row.uncPath,
@@ -1113,7 +1119,7 @@ export function serializeLibrary(row: {
   description: string;
   originalName: string;
   mimeType: string;
-  size: number;
+  size: number | bigint;
   fileId: string;
   previewFileId: string;
   uncPath: string;
@@ -1146,7 +1152,7 @@ export function serializeLibrary(row: {
       id: f.id,
       originalName: f.originalName,
       mimeType: f.mimeType,
-      size: f.size,
+      size: asSize(f.size),
       uncPath: f.uncPath,
       preview,
       fileUrl,
@@ -1165,7 +1171,7 @@ export function serializeLibrary(row: {
     description: row.description,
     originalName: cover.originalName || row.originalName,
     mimeType: cover.mimeType || row.mimeType,
-    size: row.size,
+    size: asSize(row.size),
     fileId: cover.fileId || row.fileId,
     previewFileId: row.previewFileId,
     uncPath: row.uncPath,

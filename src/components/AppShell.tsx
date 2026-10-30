@@ -15,6 +15,7 @@ import {
   FileStack,
   FilePenLine,
   FileText,
+  GraduationCap,
   Home,
   Inbox,
   Library,
@@ -47,6 +48,7 @@ const NAV = [
   { href: "/prod", label: "Производство", icon: Clapperboard, perm: "prod.view" as const, section: "work" },
   { href: "/library", label: "Хранилище", icon: Library, perm: "prod.work" as const, section: "work" },
   { href: "/data", label: "Data", icon: Database, perm: "data.view" as const, section: "work" },
+  { href: "/learn", label: "Обучение", icon: GraduationCap, perm: null, section: "work" },
   { href: "/calendar", label: "Календарь", icon: CalendarDays, perm: null, section: "work" },
   { href: "/meet", label: "Совещания", icon: Video, perm: null, section: "work" },
   { href: "/documents", label: "Документы", icon: FileText, perm: null, section: "papers" },
@@ -69,6 +71,7 @@ function itemActive(href: string, path: string) {
   if (href === "/prod") return path.startsWith("/prod");
   if (href === "/library") return path.startsWith("/library");
   if (href === "/data") return path === "/data" || path.startsWith("/data/");
+  if (href === "/learn") return path === "/learn" || path.startsWith("/learn/");
   if (href === "/documents") return path.startsWith("/documents");
   if (href === "/registry") return path.startsWith("/registry");
   if (href === "/requests") return path.startsWith("/requests");
@@ -111,7 +114,7 @@ function NavLink({
   );
 }
 
-const EMPLOYEE_PRIMARY = ["/", "/chat", "/prod", "/documents", "/finance", "/calendar", "/meet", "/duty"];
+const EMPLOYEE_PRIMARY = ["/", "/chat", "/prod", "/learn", "/documents", "/finance", "/calendar", "/meet", "/duty"];
 
 function slimEmployeeNav(user: SessionUser) {
   return user.roleCode === "employee" && !userCan(user, "users.manage") && !userCan(user, "prod.manage");

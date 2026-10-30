@@ -60,6 +60,13 @@ function isAho(r: Row) {
   return r.holderName.trim().toLocaleLowerCase("ru") === "ахо";
 }
 
+function invKey(no: string) {
+  const t = no.trim().replace(/\s+/g, " ").toLocaleLowerCase("ru");
+  if (!t) return "";
+  if (/^\d+$/.test(t)) return String(Number(t));
+  return t;
+}
+
 function matchesQuery(r: Row, s: string) {
   if (!s) return true;
   return `${r.invNo} ${r.name} ${who(r)} ${r.pcHost} ${r.pcCpu} ${r.pcGpu} ${r.note}`
@@ -161,6 +168,23 @@ export function InventoryTable() {
 
   const questioned = useMemo(() => rows.filter((r) => r.status === "question"), [rows]);
 
+  const dupNos = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const r of rows) {
+      const k = invKey(r.invNo);
+      if (!k) continue;
+      counts.set(k, (counts.get(k) || 0) + 1);
+    }
+    const dups = new Set<string>();
+    for (const [k, n] of counts) if (n > 1) dups.add(k);
+    return dups;
+  }, [rows]);
+
+  function isDup(r: Row) {
+    const k = invKey(r.invNo);
+    return Boolean(k && dupNos.has(k));
+  }
+
   const shown = useMemo(() => {
     const s = q.trim().toLocaleLowerCase("ru");
     return rows.filter((r) => matchesQuery(r, s)).sort((a, b) => compareRows(a, b, sortKey, sortDir));
@@ -224,6 +248,11 @@ export function InventoryTable() {
         ) : null}
       </div>
       {msg ? <p className="text-sm text-ok">{msg}</p> : null}
+      {dupNos.size ? (
+        <p className="text-sm text-bad">
+          Задвоено {dupNos.size} инв. № — такие строки подсвечены красным.
+        </p>
+      ) : null}
 
       {manage && questioned.length ? (
         <Card>
@@ -233,9 +262,10 @@ export function InventoryTable() {
             {questioned.map((r) => (
               <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
                 <div>
-                  <div className="font-semibold text-navy">
+                  <div className={`font-semibold ${isDup(r) ? "text-bad" : "text-navy"}`}>
                     {r.invNo ? `${r.invNo} · ` : ""}
                     {r.name}
+                    {isDup(r) ? " · задвоено" : ""}
                   </div>
                   <div className="text-xs text-muted">
                     {who(r)}
@@ -361,12 +391,20 @@ export function InventoryTable() {
             </tr>
           </thead>
           <tbody>
-            {shown.map((r) => (
-              <tr key={r.id} className={`border-t border-line ${r.status === "question" ? "bg-[#f7efe0]" : ""}`}>
-                <td className="px-3 py-2 font-mono">{r.invNo || "б/н"}</td>
+            {shown.map((r) => {
+              const dup = isDup(r);
+              return (
+              <tr
+                key={r.id}
+                className={`border-t border-line ${
+                  dup ? "bg-[var(--bad-bg)]" : r.status === "question" ? "bg-[#f7efe0]" : ""
+                }`}
+              >
+                <td className={`px-3 py-2 font-mono ${dup ? "font-semibold text-bad" : ""}`}>{r.invNo || "б/н"}</td>
                 <td className="px-3 py-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold text-navy">{r.name}</span>
+                    <span className={`font-semibold ${dup ? "text-bad" : "text-navy"}`}>{r.name}</span>
+                    {dup ? <Pill tone="bad">задвоено</Pill> : null}
                     {r.status === "question" ? <Pill tone="wait">под вопросом</Pill> : null}
                   </div>
                   {r.pcCpu ? (
@@ -391,7 +429,8 @@ export function InventoryTable() {
                   </td>
                 ) : null}
               </tr>
-            ))}
+            );
+            })}
           </tbody>
         </table>
       </div>

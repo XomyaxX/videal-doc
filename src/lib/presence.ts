@@ -249,6 +249,16 @@ async function raiseFlag(opts: { userId: string; ymd: string; kind: string; minu
   });
 }
 
+export const QR_ONLY_ERROR = "Отметить приход и уход можно только по QR на телевизоре у входа.";
+
+export function attendanceSourceLabel(source: string) {
+  if (source === "gate") return "QR";
+  if (source === "lan") return "ПК";
+  if (source === "auto") return "сайт";
+  if (source === "manual") return "кнопка";
+  return source || "";
+}
+
 export async function markIn(opts: {
   userId: string;
   ip: string;
@@ -260,8 +270,11 @@ export async function markIn(opts: {
   if (attendanceStartsLater(clock.ymd)) {
     return { ok: false as const, error: attendanceClosedError() };
   }
+  if (opts.source !== "gate") {
+    return { ok: false as const, error: QR_ONLY_ERROR };
+  }
   const extra = opts.extraIps || [];
-  const onSite = opts.trust || opts.source === "lan" ? true : await isOnSite(opts.ip);
+  const onSite = opts.trust ? true : await isOnSite(opts.ip, extra);
   if (!onSite) {
     await prisma.attendanceEvent.create({
       data: { userId: opts.userId, ymd: clock.ymd, kind: "deny_in", ip: opts.ip, detail: opts.source },
@@ -316,6 +329,9 @@ export async function markOut(opts: {
   if (attendanceStartsLater(clock.ymd)) {
     return { ok: false as const, error: attendanceClosedError() };
   }
+  if (opts.source !== "gate") {
+    return { ok: false as const, error: QR_ONLY_ERROR };
+  }
   const extra = opts.extraIps || [];
   const onSite = opts.trust ? true : await isOnSite(opts.ip);
   if (!onSite) {
@@ -356,17 +372,9 @@ export async function markOut(opts: {
 }
 
 export async function presencePing(opts: { userId: string; ip: string; extraIps?: string[] }) {
-  const clock = officeClock();
   const extra = opts.extraIps || [];
-  const onSite = await isOnSite(opts.ip);
-  if (!onSite) return { onSite: false, autoIn: false };
-  const leave = await onApprovedLeave(opts.userId, clock.ymd);
-  let autoIn = false;
-  if (!leave && clock.weekdayWork && clock.minutes >= MORNING_FROM && clock.minutes < MORNING_TO) {
-    const res = await markIn({ userId: opts.userId, ip: opts.ip, extraIps: extra, source: "auto" });
-    autoIn = res.ok && !res.already;
-  }
-  return { onSite: true, autoIn };
+  const onSite = await isOnSite(opts.ip, extra);
+  return { onSite, autoIn: false };
 }
 
 export async function presenceSnapshot(userId: string, ip: string, extraIps: string[] = []) {
@@ -422,7 +430,7 @@ export async function tickPresence() {
       await notify({
         userId: day.userId,
         title: "Отметьтесь об уходе",
-        body: "Рабочий день до 18:00. Нажмите «Ушёл», пока вы ещё в офисе.",
+        body: "Рабочий день до 18:00. Отсканируйте QR на телевизоре у входа, пока вы ещё в офисе.",
         link: "/",
         urgency: "info",
       });

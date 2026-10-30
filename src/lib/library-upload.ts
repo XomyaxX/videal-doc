@@ -10,6 +10,7 @@ export async function uploadLibraryFile(opts: {
   title?: string;
   kind?: string;
   description?: string;
+  endpoint?: string;
 }) {
   const fileName = opts.fileName || opts.file.name;
   const title = opts.title || titleFromFilename(fileName);
@@ -33,7 +34,7 @@ export async function uploadLibraryFile(opts: {
       fd.set("description", description);
       if (opts.parentId) fd.set("parentId", opts.parentId);
     }
-    const res = await fetch("/api/library/chunk", { method: "POST", body: fd });
+    const res = await fetch(opts.endpoint || "/api/library/chunk", { method: "POST", body: fd });
     const raw = await res.text();
     try {
       last = JSON.parse(raw) as { id?: string; error?: string };

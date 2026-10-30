@@ -111,8 +111,8 @@ export function OfficeLanCard({ people }: { people: Person[] }) {
     <Card className="mb-6 max-w-3xl space-y-3">
       <h2 className="font-serif text-xl text-navy">ПК в офисной сети</h2>
       <p className="text-sm text-muted">
-        Сервер сам опрашивает локалку (ping + ARP). Привяжите MAC рабочего компьютера к сотруднику — приход отметится, когда
-        этот ПК появится в сети. Уход по-прежнему кнопкой: компьютер часто остаётся включённым.
+        Сервер сам опрашивает локалку (ping + ARP). Привяжите MAC рабочего компьютера к сотруднику — в Контроле будет видно,
+        что ПК в сети. Приход и уход отмечаются только по QR на телевизоре у входа.
       </p>
       <div className="flex flex-wrap gap-2">
         <Button type="button" disabled={busy} onClick={() => void scan()}>

@@ -3,7 +3,7 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { notify } from "@/lib/notify";
 import { archiveHrLetter, archiveHrScan } from "@/lib/archive";
-import { mailSettings, sendMailToUser, siteUrl } from "@/lib/mail";
+import { notifyHrSubmitted } from "@/lib/hr-submit";
 import { USER_SAFE_ORG_SELECT } from "@/lib/user-public";
 
 async function load(id: string) {
@@ -66,35 +66,11 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     return NextResponse.json({ ok: true });
   }
 
-  if (action === "submit" && mine && row.status === "signed") {
-    if (!row.signedFileId) return NextResponse.json({ error: "Сначала приложите подписанный скан" }, { status: 400 });
+  if (action === "submit" && mine && ["draft", "signed", "rework"].includes(row.status)) {
     await prisma.hrRequest.update({ where: { id }, data: { status: "review" } });
     await archiveHrLetter(id, true);
-    await archiveHrScan(id);
-    await notify({
-      userId: row.managerId,
-      title: "Заявление на рассмотрении",
-      body: `${row.number} · ${row.title}`,
-      link: `/statements/${id}`,
-      urgency: "normal",
-    });
-    void (async () => {
-      const s = await mailSettings();
-      if (s?.mailAutoSend === false) return;
-      const text = `Заявление ${row.number} «${row.title}» отправлено на рассмотрение.\n${siteUrl(`/statements/${id}`)}`;
-      await sendMailToUser({
-        userId: row.managerId,
-        fromUserId: session.user.id,
-        subject: `Заявление ${row.number}: ${row.title}`,
-        text,
-      });
-      await sendMailToUser({
-        userId: row.authorId,
-        fromUserId: session.user.id,
-        subject: `Заявление ${row.number} отправлено`,
-        text,
-      });
-    })().catch((e) => console.error("mail.hr", e));
+    if (row.signedFileId) await archiveHrScan(id);
+    await notifyHrSubmitted({ ...row, id }, session.user.id);
     return NextResponse.json({ ok: true });
   }
 
@@ -106,8 +82,16 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     });
     await notify({
       userId: row.authorId,
-      title: next === "accepted" ? "Заявление принято" : next === "rejected" ? "Заявление отклонено" : "Заявление вернули",
-      body: String(body.note || row.number),
+      title:
+        next === "accepted"
+          ? "Заявление согласовано"
+          : next === "rejected"
+            ? "Заявление отклонено"
+            : "Заявление вернули",
+      body:
+        next === "accepted"
+          ? `${row.number}: распечатайте, подпишите и передайте руководителю`
+          : String(body.note || row.number),
       link: `/statements/${id}`,
       urgency: next === "rejected" || next === "rework" ? "urgent" : "normal",
     });

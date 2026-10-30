@@ -24,7 +24,10 @@ export function StatementForm({
     setError("");
     const fd = new FormData(e.currentTarget);
     const payload: Record<string, string> = {};
-    for (const key of spec.fields) payload[key] = String(fd.get(key) || "").trim();
+    for (const [key, value] of fd.entries()) {
+      if (key === "type" || key === "managerId") continue;
+      payload[key] = String(value || "").trim();
+    }
     const res = await fetch("/api/hrdocs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -66,7 +69,7 @@ export function StatementForm({
             </Select>
           </Field>
           {f.includes("date") ? (
-            <Field label="Дата">
+            <Field label={type === "late" ? "Дата опоздания" : "Дата"}>
               <Input name="date" type="date" required />
             </Field>
           ) : null}
@@ -105,9 +108,44 @@ export function StatementForm({
           ) : null}
           {f.includes("reason") ? (
             <div className="md:col-span-2">
-              <Field label="Причина / комментарий">
-                <Textarea name="reason" />
+              <Field label={type === "late" ? "Причина опоздания" : "Причина / комментарий"}>
+                <Textarea name="reason" required={type === "late"} />
               </Field>
+            </div>
+          ) : null}
+          {f.includes("arrived") ? (
+            <Field label="Пришёл(а) в">
+              <Input name="arrived" type="time" required />
+            </Field>
+          ) : null}
+          {f.includes("due") ? (
+            <Field label="Начало рабочего дня">
+              <Input name="due" type="time" defaultValue="10:00" required />
+            </Field>
+          ) : null}
+          {f.includes("notifyReason") ? (
+            <div className="md:col-span-2">
+              <Field label="Почему не предупредил(а) руководителя" hint="Если предупредили — оставьте пустым">
+                <Input name="notifyReason" />
+              </Field>
+            </div>
+          ) : null}
+          {f.includes("makeup") ? (
+            <div className="md:col-span-2 grid gap-3">
+              <p className="text-sm font-semibold text-navy">Отработка (до трёх дат, пустые строки останутся для рукописи)</p>
+              {[1, 2, 3].map((n) => (
+                <div key={n} className="grid gap-2 md:grid-cols-3">
+                  <Field label={`Дата ${n}`}>
+                    <Input name={`makeup${n}Date`} type="date" />
+                  </Field>
+                  <Field label="С">
+                    <Input name={`makeup${n}From`} type="time" />
+                  </Field>
+                  <Field label="До">
+                    <Input name={`makeup${n}To`} type="time" />
+                  </Field>
+                </div>
+              ))}
             </div>
           ) : null}
           {f.includes("body") ? (
@@ -120,7 +158,7 @@ export function StatementForm({
         </div>
       </Card>
       <Button disabled={busy} type="submit">
-        Сохранить и открыть для печати
+        {busy ? "Отправляем…" : "Отправить на согласование"}
       </Button>
     </form>
   );

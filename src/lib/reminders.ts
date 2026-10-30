@@ -5,7 +5,7 @@ import { tickBirthdays } from "./birthdays";
 import { tickDuty } from "./duty";
 import { officeYmd } from "./dates";
 import { daysUntilYmd, dueLabel, issuedYmd, reportDueYmd } from "./report-period";
-import { stat } from "fs/promises";
+import { nasBackupFreshness } from "./nas-backup-status";
 
 export async function tickReminders() {
   tickBirthdays().catch(() => {});
@@ -117,26 +117,23 @@ export async function tickReminders() {
     where: { deletedAt: null, status: "active", role: { code: { in: ["admin", "superadmin"] } } },
     select: { id: true },
   });
-  try {
-    const st = await stat(/* turbopackIgnore: true */ "/mnt/nas-backup/Videal-Ubuntu/.last-backup-ok");
-    const ageH = (now.getTime() - st.mtimeMs) / 36e5;
-    if (ageH > 36) {
-      for (const a of admins) {
-        await notify({
-          userId: a.id,
-          title: "Резервная копия просрочена",
-          body: `Последний успешный NAS-снимок старше ${Math.round(ageH)} ч. Проверьте шару «резервное копирование».`,
-          link: "/admin/backup",
-          urgency: "urgent",
-        });
-      }
-    }
-  } catch {
+  const backup = await nasBackupFreshness(now.getTime());
+  if (!backup.found) {
     for (const a of admins) {
       await notify({
         userId: a.id,
         title: "Резервная копия недоступна",
-        body: "Файл .last-backup-ok на NAS не найден. Ночное копирование, скорее всего, не проходит.",
+        body: "Нет отметки об успешной ночной копии на NAS. Проверьте службу nas-backup.",
+        link: "/admin/backup",
+        urgency: "urgent",
+      });
+    }
+  } else if (backup.ageHours != null && backup.ageHours > 36) {
+    for (const a of admins) {
+      await notify({
+        userId: a.id,
+        title: "Резервная копия просрочена",
+        body: `Последний успешный NAS-снимок старше ${Math.round(backup.ageHours)} ч. Проверьте шару Ubuntu.`,
         link: "/admin/backup",
         urgency: "urgent",
       });

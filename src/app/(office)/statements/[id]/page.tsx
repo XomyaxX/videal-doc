@@ -24,7 +24,7 @@ export default async function StatementPage({ params }: { params: Promise<{ id: 
   if (!see) notFound();
   const st = HR_STATUS[row.status] || HR_STATUS.draft;
   const payload = JSON.parse(row.payloadJson || "{}") as Record<string, string>;
-  const paragraphs = letterBody(row.type, payload);
+  const paragraphs = letterBody(row.type, payload, row.author);
   const signed = row.signedFileId
     ? await prisma.storedFile.findUnique({ where: { id: row.signedFileId } })
     : null;
@@ -61,7 +61,16 @@ export default async function StatementPage({ params }: { params: Promise<{ id: 
         <div className="space-y-4">
           <Card>
             <h2 className="font-serif text-xl text-navy">Печать</h2>
-            <Button href={`/api/hrdocs/${row.id}/pdf`} variant="secondary">
+            {row.status === "accepted" ? (
+              <p className="mb-3 text-sm">Распечатайте, подпишите и передайте руководителю.</p>
+            ) : (
+              <p className="mb-3 text-sm text-muted">
+                {row.status === "review"
+                  ? "Печатать и подписывать нужно после согласования."
+                  : "PDF можно открыть сейчас, подпись — после согласования."}
+              </p>
+            )}
+            <Button href={`/api/hrdocs/${row.id}/pdf`} variant={row.status === "accepted" ? "gold" : "secondary"}>
               Открыть PDF
             </Button>
             {signed ? (
@@ -71,15 +80,12 @@ export default async function StatementPage({ params }: { params: Promise<{ id: 
                   {signed.originalName}
                 </a>
               </p>
-            ) : (
-              <p className="mt-3 text-sm text-muted">Подписанный скан ещё не приложен.</p>
-            )}
+            ) : null}
           </Card>
           <Card>
             <StatementActions
               id={row.id}
               status={row.status}
-              signedFileId={row.signedFileId}
               isAuthor={row.authorId === user.id}
               isManager={row.managerId === user.id}
             />

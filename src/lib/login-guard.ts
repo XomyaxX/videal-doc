@@ -1,5 +1,5 @@
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
-const MAX_FAILS = 5;
+const MAX_FAILS = 8;
 
 type Bucket = { fails: number; firstAt: number; lockedUntil: number; windowMs: number };
 

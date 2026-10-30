@@ -7,6 +7,7 @@ export type ProdStatus = (typeof PROD_STATUSES)[number];
 
 export const STATUS_LABEL: Record<string, string> = {
   todo: "Не готово",
+  appoint: "Назначить",
   wip: "В работе",
   done: "Готово",
   revise: "Под правками",
@@ -17,6 +18,7 @@ export const STATUS_LABEL: Record<string, string> = {
 
 export const STATUS_PILL: Record<string, string> = {
   todo: "st-todo",
+  appoint: "st-todo",
   wip: "st-wip",
   done: "st-done",
   revise: "st-revise",

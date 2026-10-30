@@ -2,9 +2,9 @@ import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { PageHeader, Card, Button, Pill } from "@/components/ui";
-import { officeYmd, officeClock, fmtTimeOmsk, fmtDate } from "@/lib/dates";
+import { officeYmd, officeClock, fmtTimeOmsk, fmtDate, officeWeekMonday, addYmd } from "@/lib/dates";
 import { fullName } from "@/lib/names";
-import { flagLabel, leaveCoversYmd, leaveShort, LEAVE_TYPES, onTimesheet } from "@/lib/presence";
+import { attendanceSourceLabel, flagLabel, leaveCoversYmd, leaveShort, LEAVE_TYPES, onTimesheet } from "@/lib/presence";
 import { FlagOk } from "./FlagOk";
 import { ControlSearch } from "./ControlSearch";
 import { USER_SAFE_SELECT } from "@/lib/user-public";
@@ -15,9 +15,7 @@ import { stationOnline } from "@/lib/office-lan";
 import { GATE_SCREEN_URL } from "@/lib/gate";
 
 function addDays(ymd: string, n: number) {
-  const [y, m, d] = ymd.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d + n));
-  return dt.toISOString().slice(0, 10);
+  return addYmd(ymd, n);
 }
 
 const OPEN = new Set(["wip", "revise", "blocked"]);
@@ -25,6 +23,8 @@ const DONE = new Set(["done", "approved"]);
 const OPEN_ORDER = ["wip", "revise", "blocked"];
 const TABS = ["people", "review", "late", "flags", "time"] as const;
 type Tab = (typeof TABS)[number];
+/** Review / late / flags stay in the page, hidden until the desk is ready. */
+const VISIBLE_TABS: Tab[] = ["people", "time"];
 
 type TaskRow = {
   id: string;
@@ -78,9 +78,16 @@ export default async function ControlPage({
 }) {
   await requirePermission("presence.review");
   const sp = await searchParams;
-  const to = sp.to && /^\d{4}-\d{2}-\d{2}$/.test(sp.to) ? sp.to : officeYmd();
-  const from = sp.from && /^\d{4}-\d{2}-\d{2}$/.test(sp.from) ? sp.from : addDays(to, -6);
-  const tab = (TABS as readonly string[]).includes(sp.tab || "") ? (sp.tab as Tab) : "people";
+  const rawFrom =
+    sp.from && /^\d{4}-\d{2}-\d{2}$/.test(sp.from)
+      ? sp.from
+      : sp.to && /^\d{4}-\d{2}-\d{2}$/.test(sp.to)
+        ? sp.to
+        : officeYmd();
+  const from = officeWeekMonday(rawFrom);
+  const to = addDays(from, 6);
+  const requested = (TABS as readonly string[]).includes(sp.tab || "") ? (sp.tab as Tab) : "people";
+  const tab = VISIBLE_TABS.includes(requested) ? requested : "people";
   const q = (sp.q || "").trim();
   const today = officeYmd();
 
@@ -211,13 +218,14 @@ export default async function ControlPage({
   const ymds: string[] = [];
   for (let d = from; d <= to; d = addDays(d, 1)) ymds.push(d);
 
-  const tabs: { id: Tab; label: string; count: number }[] = [
+  const tabMeta: { id: Tab; label: string; count: number }[] = [
     { id: "people", label: "Сотрудники", count: people.length },
     { id: "review", label: "На проверке", count: review.length },
     { id: "late", label: "Просрочки", count: late.length },
     { id: "flags", label: "Отклонения", count: flagsOwn.length },
     { id: "time", label: "Табель", count: timePeople.length },
   ];
+  const tabs = tabMeta.filter((t) => VISIBLE_TABS.includes(t.id));
 
   const placeholders: Record<Tab, string> = {
     people: "Фамилия, должность, задача",
@@ -233,7 +241,7 @@ export default async function ControlPage({
     <div>
       <PageHeader
         title="Контроль"
-        subtitle="Отдельные разделы: кто что делает, проверки, просрочки, табель. На телевизоре: http://192.168.1.51/qr"
+        subtitle="Кто на месте и табель. На телевизоре: http://192.168.1.51/qr"
         actions={
           <div className="flex flex-wrap gap-2">
             <Button href={`/api/duty/pdf?kind=journal&week=${from}`} variant="secondary">
@@ -297,7 +305,9 @@ export default async function ControlPage({
                       </p>
                       <p className="mt-1 text-xs text-muted">
                         {att?.inAt
-                          ? `сегодня ${fmtTimeOmsk(att.inAt)}${att.outAt ? `–${fmtTimeOmsk(att.outAt)}` : ""}`
+                          ? `сегодня ${fmtTimeOmsk(att.inAt)}${att.outAt ? `–${fmtTimeOmsk(att.outAt)}` : ""}${
+                              att.inSource ? ` · ${attendanceSourceLabel(att.inSource)}` : ""
+                            }`
                           : "сегодня не отмечен"}
                         {lanOnline.has(p.id) ? " · ПК в сети" : ""}
                       </p>
@@ -462,6 +472,9 @@ export default async function ControlPage({
                             <span>
                               {fmtTimeOmsk(row.inAt)}
                               {row.outAt ? `–${fmtTimeOmsk(row.outAt)}${row.outSource === "forgot" ? " забыл" : ""}` : "–"}
+                              {row.inSource ? (
+                                <span className="ml-1 text-xs text-muted">{attendanceSourceLabel(row.inSource)}</span>
+                              ) : null}
                             </span>
                           ) : awayLabel ? (
                             <span className="text-navy">{awayLabel}</span>

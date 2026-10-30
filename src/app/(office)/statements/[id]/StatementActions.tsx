@@ -6,13 +6,11 @@ import { Button, ErrorText, Field, Textarea } from "@/components/ui";
 export function StatementActions({
   id,
   status,
-  signedFileId,
   isAuthor,
   isManager,
 }: {
   id: string;
   status: string;
-  signedFileId: string;
   isAuthor: boolean;
   isManager: boolean;
 }) {
@@ -20,13 +18,13 @@ export function StatementActions({
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
 
-  async function act(action: string, extra?: Record<string, string>) {
+  async function act(action: string) {
     setBusy(true);
     setError("");
     const res = await fetch(`/api/hrdocs/${id}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, note, ...extra }),
+      body: JSON.stringify({ action, note }),
     });
     const data = await res.json();
     setBusy(false);
@@ -34,41 +32,31 @@ export function StatementActions({
     else window.location.reload();
   }
 
-  async function upload(file: File) {
-    const fd = new FormData();
-    fd.set("file", file);
-    const up = await fetch("/api/upload", { method: "POST", body: fd });
-    const data = await up.json();
-    if (!up.ok) {
-      setError(data.error || "Не удалось загрузить скан");
-      return;
-    }
-    await act("attach", { fileId: data.id });
-  }
-
   return (
     <div className="space-y-3">
       <ErrorText>{error}</ErrorText>
       {isAuthor && ["draft", "signed", "rework"].includes(status) ? (
-        <Field label="Подписанный скан" hint="Распечатайте PDF, подпишите, приложите фото или pdf">
-          <input
-            type="file"
-            accept=".jpg,.jpeg,.png,.webp,.pdf"
-            disabled={busy}
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void upload(f);
-            }}
-          />
-        </Field>
+        <>
+          <p className="text-sm text-muted">
+            {status === "rework"
+              ? "Исправьте заявление и снова отправьте руководителю."
+              : "Черновик ещё не у руководителя."}
+          </p>
+          <Button disabled={busy} onClick={() => act("submit")}>
+            Отправить на согласование
+          </Button>
+        </>
       ) : null}
-      {isAuthor && status === "signed" ? (
-        <Button disabled={busy} onClick={() => act("submit")}>
-          Отправить руководителю
-        </Button>
+      {isAuthor && status === "review" ? (
+        <p className="text-sm text-muted">
+          Заявление у руководителя. Распечатать, подписать и передать нужно после согласования.
+        </p>
       ) : null}
-      {isAuthor && status === "draft" ? (
-        <p className="text-sm text-muted">Сначала печать и скан с подписью — без этого отправить нельзя.</p>
+      {isAuthor && status === "accepted" ? (
+        <p className="text-sm">Согласовано. Распечатайте PDF, подпишите и передайте руководителю.</p>
+      ) : null}
+      {isAuthor && status === "rejected" ? (
+        <p className="text-sm text-muted">Руководитель отклонил заявление.</p>
       ) : null}
       {isManager && status === "review" ? (
         <>
@@ -77,7 +65,7 @@ export function StatementActions({
           </Field>
           <div className="flex flex-wrap gap-2">
             <Button disabled={busy} variant="gold" onClick={() => act("accept")}>
-              Принять
+              Согласовать
             </Button>
             <Button disabled={busy} variant="secondary" onClick={() => act("rework")}>
               Вернуть

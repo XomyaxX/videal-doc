@@ -1,47 +1,9 @@
-import { readdir, stat } from "fs/promises";
-import path from "path";
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { requestTrustedIp } from "@/lib/presence";
 import { userCan } from "@/lib/types";
-
-async function newestBackupMs() {
-  const roots = [
-    path.join(/* turbopackIgnore: true */ process.cwd(), "data", "backups"),
-    "/var/log/nas-backup",
-  ];
-  let newest = 0;
-  for (const root of roots) {
-    try {
-      const names = await readdir(/* turbopackIgnore: true */ root);
-      for (const name of names) {
-        try {
-          const st = await stat(/* turbopackIgnore: true */ path.join(root, name, "videal.db"));
-          if (st.mtimeMs > newest) newest = st.mtimeMs;
-        } catch {
-          try {
-            const st = await stat(/* turbopackIgnore: true */ path.join(root, name));
-            if (name.includes("last-backup-ok")) {
-              if (st.mtimeMs > newest) newest = st.mtimeMs;
-            }
-          } catch {
-            /* skip */
-          }
-        }
-      }
-    } catch {
-      /* skip */
-    }
-  }
-  try {
-    const st = await stat(/* turbopackIgnore: true */ "/mnt/nas-backup/Videal-Ubuntu/.last-backup-ok");
-    if (st.mtimeMs > newest) newest = st.mtimeMs;
-  } catch {
-    /* unmounted */
-  }
-  return newest;
-}
+import { nasBackupFreshness } from "@/lib/nas-backup-status";
 
 function isLoopback(req: NextRequest) {
   const ip = requestTrustedIp(req);
@@ -60,12 +22,10 @@ export async function GET(req: NextRequest) {
   if (!isLoopback(req) && !staff) {
     return NextResponse.json(publicBody);
   }
-  const backupMs = await newestBackupMs();
-  const ageH = backupMs ? (Date.now() - backupMs) / 36e5 : null;
-  const backupOk = ageH != null && ageH < 36;
+  const backup = await nasBackupFreshness();
   return NextResponse.json({
     ...publicBody,
-    backupOk,
-    backupAgeHours: ageH == null ? null : Math.round(ageH * 10) / 10,
+    backupOk: backup.backupOk,
+    backupAgeHours: backup.ageHours == null ? null : Math.round(backup.ageHours * 10) / 10,
   });
 }

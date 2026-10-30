@@ -14,7 +14,7 @@ html, body { margin: 0; background: #16324f; }
   left: 0;
   overflow: hidden;
   background: #16324f;
-  color: #ffffff;
+  color: #16324f;
   font-family: Arial, Helvetica, sans-serif;
 }
 .vd-gate-media, .vd-gate-media img, .vd-gate-media video {
@@ -31,35 +31,69 @@ html, body { margin: 0; background: #16324f; }
   top: 0;
   right: 0;
   bottom: 0;
-  width: 42%;
-  background: #16324f;
-  background: rgba(22, 50, 79, 0.88);
+  width: 40%;
+  background: #f3eee6;
   text-align: center;
 }
+.vd-gate-side:before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 6px;
+  background: #a57c3b;
+}
+.vd-gate-gold {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 8px;
+  background: #a57c3b;
+}
 .vd-gate-mid { display: table; width: 100%; height: 100%; }
-.vd-gate-cell { display: table-cell; vertical-align: middle; padding: 28px 20px; }
-.vd-gate-clock {
+.vd-gate-cell { display: table-cell; vertical-align: middle; padding: 36px 28px 28px; }
+.vd-gate-stamp {
   margin: 0;
+  font-family: Georgia, "Times New Roman", Times, serif;
+  font-size: 15px;
+  letter-spacing: 0.12em;
+  color: #a57c3b;
+}
+.vd-gate-title {
+  margin: 8px 0 0;
+  font-family: Georgia, "Times New Roman", Times, serif;
+  font-size: 34px;
+  line-height: 1.1;
+  font-weight: 700;
+  color: #16324f;
+}
+.vd-gate-clock {
+  margin: 18px 0 0;
+  font-family: Georgia, "Times New Roman", Times, serif;
   font-size: 72px;
   line-height: 1;
   font-weight: 700;
+  color: #16324f;
 }
-.vd-gate-caption { margin: 16px 8px 0; font-size: 24px; line-height: 1.35; }
+.vd-gate-caption { margin: 16px 8px 0; font-size: 20px; line-height: 1.35; color: #6b6258; }
 .vd-gate-qrbox {
   width: 78%;
   margin: 20px auto 0;
-  background: #ffffff;
-  padding: 12px;
+  background: #fffcf7;
+  border: 3px solid #a57c3b;
+  padding: 14px;
 }
 .vd-gate-qrbox img {
   display: block;
-  width: 100% !important;
-  height: auto !important;
+  width: 100%;
+  height: auto;
   max-width: 100%;
   border: 0;
 }
-.vd-gate-note { margin: 18px 8px 0; font-size: 16px; line-height: 1.4; color: #d5deea; }
-.vd-gate-wait { margin: 24px 12px 0; font-size: 22px; line-height: 1.4; }
+.vd-gate-note { margin: 18px 8px 0; font-size: 16px; line-height: 1.4; color: #6b6258; }
+.vd-gate-wait { margin: 24px 12px 0; font-size: 22px; line-height: 1.4; color: #6b6258; }
 `;
 
 export function GateBoard({ kioskKey = "" }: { kioskKey?: string }) {
@@ -131,8 +165,11 @@ export function GateBoard({ kioskKey = "" }: { kioskKey?: string }) {
         </div>
       ) : null}
       <section className="vd-gate-side">
+        <div className="vd-gate-gold" />
         <div className="vd-gate-mid">
           <div className="vd-gate-cell">
+            <p className="vd-gate-stamp">ООО «Видеаль Медиа»</p>
+            <p className="vd-gate-title">Видеал.Док</p>
             <p className="vd-gate-clock">{clock || "—"}</p>
             <p className="vd-gate-caption">Отсканируйте, чтобы отметить приход или уход</p>
             {qr ? (

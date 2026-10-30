@@ -35,6 +35,20 @@ export function officeYmd(d = new Date()) {
   }).format(d);
 }
 
+export function addYmd(ymd: string, n: number) {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + n));
+  return dt.toISOString().slice(0, 10);
+}
+
+/** Monday of the ISO/RU week that contains `ymd`. */
+export function officeWeekMonday(ymd: string) {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  const back = dow === 0 ? 6 : dow - 1;
+  return addYmd(ymd, -back);
+}
+
 export function officeClock(d = new Date()) {
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: OFFICE_TZ,

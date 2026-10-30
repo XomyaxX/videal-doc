@@ -2,8 +2,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { createHmac, timingSafeEqual } from "crypto";
 import { prisma } from "./prisma";
-import { officeClock } from "./dates";
-import { officeCidrs, onApprovedLeave, markIn, onTimesheet } from "./presence";
+import { officeCidrs } from "./presence";
 
 const execFileAsync = promisify(execFile);
 export const LAN_SEEN_MS = 12 * 60 * 1000;
@@ -177,32 +176,9 @@ export async function rememberLanSightings(hosts: LanHost[]) {
 }
 
 export async function applyLanPresence() {
-  const clock = officeClock();
   const hosts = await scanOfficeLan();
-  const stations = await rememberLanSightings(hosts);
-  if (!clock.weekdayWork) return { hosts: hosts.length, autoIn: 0 };
-  const ipByMac = new Map(hosts.map((h) => [h.mac, h.ip]));
-  let autoIn = 0;
-  const seenUsers = new Set<string>();
-  for (const st of stations) {
-    if (st.user.deletedAt || st.user.status !== "active") continue;
-    if (
-      !onTimesheet({
-        login: st.user.login,
-        lastName: st.user.lastName,
-        firstName: st.user.firstName,
-        roleCode: st.user.role.code,
-      })
-    ) {
-      continue;
-    }
-    if (seenUsers.has(st.userId)) continue;
-    seenUsers.add(st.userId);
-    if (await onApprovedLeave(st.userId, clock.ymd)) continue;
-    const res = await markIn({ userId: st.userId, ip: ipByMac.get(st.mac) || st.ipv4 || "lan", source: "lan" });
-    if (res.ok && !res.already) autoIn += 1;
-  }
-  return { hosts: hosts.length, autoIn };
+  await rememberLanSightings(hosts);
+  return { hosts: hosts.length, autoIn: 0 };
 }
 
 export function lanBindToken(userId: string) {

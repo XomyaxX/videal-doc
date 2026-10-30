@@ -31,7 +31,7 @@ export default async function StatementsPage({
     <div>
       <PageHeader
         title="Заявления"
-        subtitle="Отгул, отпуск, больничный, объяснительная — кадровые бумаги. Печать → подпись → скан обратно."
+        subtitle="Отгул, отпуск, больничный, объяснительная — кадровые бумаги. Сначала согласование, потом печать и подпись."
         actions={<Button href="/statements/new">Новое заявление</Button>}
       />
       <div className="mb-4 flex gap-2">
@@ -51,7 +51,10 @@ export default async function StatementsPage({
         ) : null}
       </div>
       {rows.length === 0 ? (
-        <Empty title={inbox ? "Входящих нет" : "Пока нет заявлений"} text="Создайте бланк, распечатайте и приложите подписанный скан." />
+        <Empty
+          title={inbox ? "Входящих нет" : "Пока нет заявлений"}
+          text={inbox ? "Когда сотрудник отправит заявление, оно появится здесь." : "Новое заявление сразу уйдёт руководителю на согласование."}
+        />
       ) : (
         <div className="space-y-3">
           {rows.map((r) => {

@@ -4,7 +4,6 @@ import { PageHeader } from "@/components/ui";
 import { officeYmd, utcMonthDay } from "@/lib/dates";
 import { fullName } from "@/lib/names";
 import { CalendarBoard } from "./CalendarBoard";
-import { canLeadProd } from "@/lib/prod";
 
 export default async function CalendarPage() {
   const user = await requireUser();
@@ -87,14 +86,13 @@ export default async function CalendarPage() {
     <div>
       <PageHeader
         title="Календарь"
-        subtitle="Встречи — чипами, задачи — полосой по дням. Свои шоты; чужие видит руководитель."
+        subtitle="Встречи и события студии. Дни рождения и авансы — чипами."
       />
       <CalendarBoard
         people={people.map(({ id, lastName, firstName, middleName }) => ({ id, lastName, firstName, middleName }))}
         departments={departments}
         meId={user.id}
         overlays={overlays}
-        canLead={canLeadProd(user)}
       />
     </div>
   );

@@ -4,7 +4,8 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { userCan } from "@/lib/types";
 import { canSeeProdTask, shareRoot } from "@/lib/prod";
-import { assertInside } from "@/lib/files";
+import { assertInside, fileRoot } from "@/lib/files";
+import { canAccessPipeTask } from "@/lib/pipe-server";
 
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -17,10 +18,15 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     include: { task: { include: { assignee: { include: { department: true } } } } },
   });
   if (!rec) return NextResponse.json({ error: "Нет файла" }, { status: 404 });
-  if (!canSeeProdTask(session.user, rec.task)) {
+  if (rec.task.kind === "pipe") {
+    if (!(await canAccessPipeTask(session.user, rec.task.id))) {
+      return NextResponse.json({ error: "Нет права" }, { status: 403 });
+    }
+  } else if (!canSeeProdTask(session.user, rec.task)) {
     return NextResponse.json({ error: "Нет права" }, { status: 403 });
   }
-  const buf = await readFile(assertInside(shareRoot(), rec.absPath));
+  const root = rec.task.kind === "pipe" ? fileRoot() : shareRoot();
+  const buf = await readFile(assertInside(root, rec.absPath));
   return new NextResponse(new Uint8Array(buf), {
     headers: {
       "Content-Type": rec.mimeType || "application/octet-stream",

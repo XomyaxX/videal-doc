@@ -20,6 +20,7 @@ export async function buildHrPdfById(id: string): Promise<{ buffer: Buffer; numb
   const spec = hrType(row.type);
   const ymd = officeYmd(row.createdAt);
   const sign = officeDateParts(new Date(`${ymd}T12:00:00+06:00`));
+  const late = row.type === "late";
   const buffer = await renderLetterPdf({
     toTitle: row.manager.position?.name || "Руководителю",
     orgName: orgNameShort(org),
@@ -27,8 +28,11 @@ export async function buildHrPdfById(id: string): Promise<{ buffer: Buffer; numb
     toName: fullName(row.manager),
     fromRole: row.author.position?.name || row.author.department?.name || "",
     fromName: shortNamePlain(row.author),
-    title: spec?.title || row.title,
-    paragraphs: letterBody(row.type, payload),
+    fromEmail: row.author.email || "",
+    fromPhone: row.author.phone || "",
+    title: late ? "ОБЪЯСНИТЕЛЬНАЯ ЗАПИСКА" : spec?.title || row.title,
+    subtitle: late ? "об опоздании на работу" : "",
+    paragraphs: letterBody(row.type, payload, row.author),
     number: row.number,
     signDay: sign.day,
     signMonth: sign.month,

@@ -28,6 +28,8 @@ import { TeamChat } from "@/components/TeamChat";
 import { allStageSort, pipelineKindLabel, taskPipelineKind } from "@/lib/prod-kinds";
 import { filterVisibleLibrary, serializeLibrary } from "@/lib/library";
 import { USER_SAFE_ORG_SELECT, USER_SAFE_SELECT } from "@/lib/user-public";
+import { loadPipeTaskSheet } from "@/lib/pipe-server";
+import { PipeTaskSheet } from "../../pipeline/PipeTaskPopup";
 
 const STAGE_SORT = allStageSort();
 
@@ -62,6 +64,29 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
     },
   });
   if (!task) notFound();
+  if (task.kind === "pipe") {
+    const sheet = await loadPipeTaskSheet(user, task.id);
+    if (!sheet) notFound();
+    return (
+      <div>
+        <PageHeader
+          title={sheet.task.title || "Задача"}
+          subtitle={`${sheet.project.name} · пайплайн`}
+          actions={
+            <div className="flex gap-3">
+              <Link href="/prod/pipeline" className="text-sm font-semibold text-navy hover:text-gold">
+                ← пайплайн
+              </Link>
+              <Link href="/prod" className="text-sm font-semibold text-navy hover:text-gold">
+                ← мои задачи
+              </Link>
+            </div>
+          }
+        />
+        <PipeTaskSheet me={sheet.me} manager={sheet.manager} people={sheet.people} project={sheet.project} task={sheet.task} />
+      </div>
+    );
+  }
   const pipeKind = taskPipelineKind(task);
   const pipeLabel = pipelineKindLabel(pipeKind);
   const lead = canLeadProd(user, task.stage, task.assignee?.department?.name, pipeKind);

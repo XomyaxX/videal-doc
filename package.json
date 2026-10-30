@@ -16,7 +16,8 @@
     "backfill:assets": "tsx prisma/reclassify-assets.ts",
     "backfill:receipts": "tsx prisma/backfill-receipt-files.ts",
     "seed:skills": "tsx prisma/seed-skills.ts",
-    "seed:user-skills": "tsx prisma/seed-user-skills.ts"
+    "seed:user-skills": "tsx prisma/seed-user-skills.ts",
+    "seed:training": "tsx prisma/seed-training.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

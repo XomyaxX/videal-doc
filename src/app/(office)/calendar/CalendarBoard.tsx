@@ -3,20 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button, Card, ErrorText, Field, Input, Select, Textarea } from "@/components/ui";
 import { officeYmd } from "@/lib/dates";
-import { STAGE_BAR } from "@/lib/prod";
 
 type Person = { id: string; lastName: string; firstName: string; middleName: string };
 type Dept = { id: string; name: string };
 type Overlay = { ymd: string; label: string; href: string; tone: "gold" | "ok" | "wait" | "navy" };
-type ProdBar = {
-  id: string;
-  title: string;
-  href: string;
-  startYmd: string;
-  endYmd: string;
-  stage: string;
-  status: string;
-};
 
 type EventRow = {
   id: string;
@@ -55,6 +45,25 @@ const COLORS = [
 
 const ymdOf = officeYmd;
 
+function isoToDatetimeLocal(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Omsk",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(d)
+      .map((p) => [p.type, p.value]),
+  );
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+}
+
 function personName(p: Person) {
   return `${p.lastName} ${p.firstName} ${p.middleName || ""}`.trim();
 }
@@ -73,43 +82,26 @@ function eventYmds(ev: EventRow) {
   return out;
 }
 
-function spanInWeek(week: (string | null)[], start: string, end: string) {
-  let from = -1;
-  let to = -1;
-  week.forEach((ymd, i) => {
-    if (!ymd) return;
-    if (ymd >= start && ymd <= end) {
-      if (from === -1) from = i;
-      to = i;
-    }
-  });
-  if (from === -1) return null;
-  return { col: from, span: to - from + 1 };
-}
-
 export function CalendarBoard({
   people,
   departments,
   meId,
   overlays,
-  canLead = false,
 }: {
   people: Person[];
   departments: Dept[];
   meId: string;
   overlays: Overlay[];
-  canLead?: boolean;
 }) {
   const now = new Date();
   const [year, setYear] = useState(Number(ymdOf(now).slice(0, 4)));
   const [month, setMonth] = useState(Number(ymdOf(now).slice(5, 7)) - 1);
   const [events, setEvents] = useState<EventRow[]>([]);
-  const [bars, setBars] = useState<ProdBar[]>([]);
-  const [scope, setScope] = useState<"mine" | "dept" | "all">("mine");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<EventRow | null>(null);
   const [picked, setPicked] = useState(ymdOf(now));
   const [who, setWho] = useState<"me" | "dept" | "list">("me");
   const [selected, setSelected] = useState<string[]>([]);
@@ -121,29 +113,32 @@ export function CalendarBoard({
     const res = await fetch(`/api/calendar?from=${from.toISOString()}&to=${to.toISOString()}`);
     const data = await res.json();
     if (res.ok) setEvents(data.events || []);
-    const pr = await fetch(
-      `/api/prod/calendar?from=${from.toISOString()}&to=${to.toISOString()}&scope=${canLead ? scope : "mine"}`,
-    );
-    const pd = await pr.json();
-    if (pr.ok) setBars(pd.bars || []);
   }
 
   useEffect(() => {
     load().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [year, month, scope]);
+  }, [year, month]);
 
   useEffect(() => {
-    if (!creating) return;
+    if (!creating && !editing) return;
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape" && !busy) {
         setCreating(false);
+        setEditing(null);
         setError("");
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [creating, busy]);
+  }, [creating, editing, busy]);
+
+  useEffect(() => {
+    if (!editing) return;
+    const ids = editing.participants.map((p) => p.userId);
+    setSelected(ids);
+    setWho(ids.length === 1 && ids[0] === meId ? "me" : "list");
+  }, [editing, meId]);
 
   const cells = useMemo(() => {
     const first = new Date(year, month, 1);
@@ -203,12 +198,72 @@ export function CalendarBoard({
       return;
     }
     setCreating(false);
+    setEditing(null);
     await load();
+  }
+
+  async function update(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!editing) return;
+    setBusy(true);
+    setError("");
+    const fd = new FormData(e.currentTarget);
+    const allDay = fd.get("allDay") === "on";
+    const start = String(fd.get("startsAt") || "");
+    const end = String(fd.get("endsAt") || start);
+    const startDay = start.slice(0, 10);
+    const endDay = (end || start).slice(0, 10);
+    const oldDay = ymdOf(new Date(editing.startsAt));
+    if (startDay && startDay !== oldDay && startDay < today) {
+      setBusy(false);
+      setError("Нельзя перенести событие на прошедшую дату");
+      return;
+    }
+    const body = {
+      title: fd.get("title"),
+      body: fd.get("body"),
+      allDay,
+      color: fd.get("color"),
+      startsAt: allDay ? `${startDay}T00:00:00` : start,
+      endsAt: allDay ? `${endDay}T23:59:00` : end || start,
+      departmentId: who === "dept" ? fd.get("departmentId") : "",
+      participantIds: who === "list" ? selected : who === "me" ? [meId] : [],
+    };
+    const res = await fetch(`/api/calendar/${editing.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    setBusy(false);
+    if (!res.ok) {
+      setError(data.error || "Не удалось сохранить");
+      return;
+    }
+    setEditing(null);
+    await load();
+  }
+
+  function closeForm() {
+    if (busy) return;
+    setCreating(false);
+    setEditing(null);
+    setError("");
+  }
+
+  function startEdit(ev: EventRow) {
+    setPicked(ymdOf(new Date(ev.startsAt)));
+    setError("");
+    setOpen(false);
+    setCreating(false);
+    setEditing(ev);
   }
 
   async function remove(id: string) {
     if (!confirm("Удалить событие?")) return;
     await fetch(`/api/calendar/${id}`, { method: "DELETE" });
+    if (editing?.id === id) setEditing(null);
+    setOpen(false);
     await load();
   }
 
@@ -240,25 +295,12 @@ export function CalendarBoard({
           </Button>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {canLead ? (
-            <div className="flex rounded-xl border border-line bg-white p-0.5 text-sm">
-              {(["mine", "dept", "all"] as const).map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => setScope(s)}
-                  className={`rounded-lg px-2.5 py-1.5 font-semibold ${scope === s ? "bg-navy !text-white" : ""}`}
-                >
-                  {s === "mine" ? "Мои шоты" : s === "dept" ? "Отдел" : "Все"}
-                </button>
-              ))}
-            </div>
-          ) : null}
           <Button
             type="button"
             onClick={() => {
               setPicked(today);
               setError("");
+              setEditing(null);
               setCreating(true);
             }}
           >
@@ -277,25 +319,19 @@ export function CalendarBoard({
       <div className="space-y-1">
         {Array.from({ length: cells.length / 7 }, (_, w) => {
           const week = cells.slice(w * 7, w * 7 + 7);
-          const weekBars = bars
-            .map((b) => {
-              const sp = spanInWeek(week, b.startYmd, b.endYmd);
-              return sp ? { b, ...sp } : null;
-            })
-            .filter((x): x is { b: ProdBar; col: number; span: number } => Boolean(x));
-          const lanes: number[] = [];
-          const placed = weekBars.map((item) => {
-            let lane = 0;
-            while (lanes[lane] !== undefined && lanes[lane] >= item.col) lane += 1;
-            lanes[lane] = item.col + item.span - 1;
-            return { ...item, lane };
-          });
-          const laneCount = Math.max(1, placed.reduce((m, p) => Math.max(m, p.lane + 1), 0));
           return (
             <div key={`w${w}`} className="relative">
               <div className="grid grid-cols-7 gap-1">
                 {week.map((ymd, i) => {
-                  if (!ymd) return <div key={`e${w}-${i}`} className="min-h-[118px] rounded-xl bg-white/40" />;
+                  if (!ymd) {
+                    return (
+                      <div
+                        key={`e${w}-${i}`}
+                        className="rounded-xl bg-white/40"
+                        style={{ minHeight: 118 }}
+                      />
+                    );
+                  }
                   const { evs, extra } = itemsFor(ymd);
                   const isToday = ymd === today;
                   const isPast = ymd < today;
@@ -327,14 +363,15 @@ export function CalendarBoard({
                           setCreating(true);
                         }
                       }}
-                      className={`min-h-[118px] cursor-pointer rounded-xl border p-2 text-left ${
+                      className={`cursor-pointer rounded-xl border p-2 text-left ${
                         isToday ? "border-gold bg-white" : isPast ? "border-line bg-white/50 text-muted" : "border-line bg-card"
                       }`}
+                      style={{ minHeight: 118 }}
                     >
                       <div className={`text-sm font-semibold ${isToday ? "text-gold" : "text-navy"}`}>
                         {Number(ymd.slice(8))}
                       </div>
-                      <div className="mt-1 space-y-1" style={{ paddingTop: placed.length ? 6 + laneCount * 18 : 0 }}>
+                      <div className="mt-1 space-y-1">
                         {evs.slice(0, 2).map((ev) => (
                           <span
                             key={ev.id}
@@ -342,17 +379,23 @@ export function CalendarBoard({
                             tabIndex={0}
                             onClick={(e) => {
                               e.stopPropagation();
-                              setPicked(ymd);
-                              setCreating(false);
-                              setOpen(true);
+                              if (ev.authorId === meId) startEdit(ev);
+                              else {
+                                setPicked(ymd);
+                                setCreating(false);
+                                setOpen(true);
+                              }
                             }}
                             onKeyDown={(e) => {
                               if (e.key === "Enter" || e.key === " ") {
                                 e.preventDefault();
                                 e.stopPropagation();
-                                setPicked(ymd);
-                                setCreating(false);
-                                setOpen(true);
+                                if (ev.authorId === meId) startEdit(ev);
+                                else {
+                                  setPicked(ymd);
+                                  setCreating(false);
+                                  setOpen(true);
+                                }
                               }
                             }}
                             className={`block truncate rounded-md px-1.5 py-0.5 text-[11px] text-white ${
@@ -391,28 +434,6 @@ export function CalendarBoard({
                   );
                 })}
               </div>
-              {placed.length > 0 ? (
-                <div className="pointer-events-none absolute inset-x-0 top-7 px-0.5">
-                  {placed.map((p) => (
-                    <a
-                      key={p.b.id}
-                      href={p.b.href}
-                      title={p.b.title}
-                      onClick={(e) => e.stopPropagation()}
-                      className={`pointer-events-auto absolute h-[16px] truncate rounded-full px-2 text-[10px] font-semibold leading-[16px] text-white ${
-                        STAGE_BAR[p.b.stage] || "bg-navy"
-                      } ${p.b.status === "revise" ? "ring-2 ring-bad" : ""} ${p.b.status === "blocked" ? "opacity-70" : ""}`}
-                      style={{
-                        top: p.lane * 18,
-                        left: `calc(${(p.col / 7) * 100}% + 4px)`,
-                        width: `calc(${(p.span / 7) * 100}% - 8px)`,
-                      }}
-                    >
-                      {p.b.title}
-                    </a>
-                  ))}
-                </div>
-              ) : null}
             </div>
           );
         })}
@@ -433,6 +454,7 @@ export function CalendarBoard({
                 type="button"
                 onClick={() => {
                   setError("");
+                  setEditing(null);
                   setCreating(true);
                 }}
               >
@@ -455,15 +477,14 @@ export function CalendarBoard({
                     </div>
                   </div>
                   {ev.authorId === meId ? (
-                    <Button
-                      type="button"
-                      variant="danger"
-                      onClick={() => {
-                        if (confirm("Удалить это событие?")) void remove(ev.id);
-                      }}
-                    >
-                      Удалить
-                    </Button>
+                    <div className="flex shrink-0 flex-col gap-2">
+                      <Button type="button" variant="secondary" onClick={() => startEdit(ev)}>
+                        Изменить
+                      </Button>
+                      <Button type="button" variant="danger" onClick={() => void remove(ev.id)}>
+                        Удалить
+                      </Button>
+                    </div>
                   ) : null}
                 </li>
               ))}
@@ -485,28 +506,20 @@ export function CalendarBoard({
         </Card>
       ) : null}
 
-      {creating ? (
+      {creating || editing ? (
         <div className="fixed inset-0 z-[60] flex items-end justify-center p-0 sm:items-center sm:p-4">
-          <button
-            type="button"
-            className="absolute inset-0 bg-navy/50"
-            aria-label="Закрыть"
-            onClick={() => {
-              if (!busy) {
-                setCreating(false);
-                setError("");
-              }
-            }}
-          />
+          <button type="button" className="absolute inset-0 bg-navy/50" aria-label="Закрыть" onClick={closeForm} />
           <Card className="relative z-10 max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl sm:rounded-2xl">
-            <h2 className="font-serif text-xl text-navy">Новое событие · {picked}</h2>
+            <h2 className="font-serif text-xl text-navy">
+              {editing ? `Изменить событие · ${editing.title}` : `Новое событие · ${picked}`}
+            </h2>
             <ErrorText>{error}</ErrorText>
-            <form onSubmit={create} className="mt-4 grid gap-3 sm:grid-cols-2">
+            <form key={editing?.id || `new-${picked}`} onSubmit={editing ? update : create} className="mt-4 grid gap-3 sm:grid-cols-2">
               <Field label="Название">
-                <Input name="title" required placeholder="Планерка, съёмка, встреча…" />
+                <Input name="title" required placeholder="Планерка, съёмка, встреча…" defaultValue={editing?.title || ""} />
               </Field>
               <Field label="Цвет">
-                <Select name="color" defaultValue="navy">
+                <Select name="color" defaultValue={editing?.color || "navy"}>
                   {COLORS.map(([id, name]) => (
                     <option key={id} value={id}>
                       {name}
@@ -515,17 +528,27 @@ export function CalendarBoard({
                 </Select>
               </Field>
               <label className="flex items-center gap-2 text-sm sm:col-span-2">
-                <input type="checkbox" name="allDay" defaultChecked /> Весь день
+                <input type="checkbox" name="allDay" defaultChecked={editing ? editing.allDay : true} /> Весь день
               </label>
               <Field label="Начало">
-                <Input name="startsAt" type="datetime-local" min={`${today}T00:00`} defaultValue={`${picked}T09:00`} />
+                <Input
+                  name="startsAt"
+                  type="datetime-local"
+                  min={editing ? undefined : `${today}T00:00`}
+                  defaultValue={editing ? isoToDatetimeLocal(editing.startsAt) : `${picked}T09:00`}
+                />
               </Field>
               <Field label="Конец">
-                <Input name="endsAt" type="datetime-local" min={`${today}T00:00`} defaultValue={`${picked}T10:00`} />
+                <Input
+                  name="endsAt"
+                  type="datetime-local"
+                  min={editing ? undefined : `${today}T00:00`}
+                  defaultValue={editing ? isoToDatetimeLocal(editing.endsAt) : `${picked}T10:00`}
+                />
               </Field>
               <div className="sm:col-span-2">
                 <Field label="Описание">
-                  <Textarea name="body" placeholder="Что планируем" />
+                  <Textarea name="body" placeholder="Что планируем" defaultValue={editing?.body || ""} />
                 </Field>
               </div>
               <div className="sm:col-span-2">
@@ -577,17 +600,9 @@ export function CalendarBoard({
               </div>
               <div className="flex gap-2 sm:col-span-2">
                 <Button type="submit" disabled={busy}>
-                  {busy ? "Сохраняем…" : "Создать"}
+                  {busy ? "Сохраняем…" : editing ? "Сохранить" : "Создать"}
                 </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={busy}
-                  onClick={() => {
-                    setCreating(false);
-                    setError("");
-                  }}
-                >
+                <Button type="button" variant="secondary" disabled={busy} onClick={closeForm}>
                   Отмена
                 </Button>
               </div>

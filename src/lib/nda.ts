@@ -260,3 +260,67 @@ export async function issueEmployeeNda(userId: string, patch?: NdaPassport | nul
   });
   return { fileId: saved.id };
 }
+
+export async function issueGuestNda(
+  authorId: string,
+  raw: {
+    lastName?: unknown;
+    firstName?: unknown;
+    middleName?: unknown;
+    gender?: unknown;
+    birthDate?: unknown;
+    passport?: unknown;
+  },
+) {
+  const lastName = clip(raw.lastName, 80);
+  const firstName = clip(raw.firstName, 80);
+  const middleName = clip(raw.middleName, 80);
+  if (!lastName || !firstName) throw new Error("Нужны фамилия и имя гостя");
+  const birthIso = isoDate(raw.birthDate);
+  if (!birthIso) throw new Error("Укажите дату рождения");
+  const passport = cleanNdaPassport(raw.passport ?? raw);
+  const miss = ndaPassportMissing(passport);
+  if (miss) throw new Error(miss);
+  const gender = raw.gender === "m" || raw.gender === "f" ? raw.gender : "";
+  const birthDate = new Date(`${birthIso}T12:00:00.000Z`);
+  const person: NdaPerson = {
+    lastName,
+    firstName,
+    middleName,
+    gender,
+    birthDate,
+    createdAt: new Date(),
+    passport,
+  };
+  const buffer = await fillNdaDocx(person);
+  const originalName = `Соглашение о неразглашении — ${shortName(person)} (гость).docx`;
+  const saved = await saveUpload({
+    buffer,
+    originalName,
+    declaredMime: DOCX_MIME,
+    userId: authorId,
+    maxBytes: 20 * 1024 * 1024,
+  });
+  const row = await prisma.guestNda.create({
+    data: {
+      lastName,
+      firstName,
+      middleName,
+      gender,
+      birthDate,
+      fileId: saved.id,
+      metaJson: JSON.stringify({
+        series: passport.series,
+        number: passport.number,
+        issuedBy: passport.issuedBy,
+        issuedAt: passport.issuedAt,
+        city: passport.city,
+        street: passport.street,
+        house: passport.house,
+        flat: passport.flat,
+      }),
+      authorId,
+    },
+  });
+  return { id: row.id, fileId: saved.id };
+}
