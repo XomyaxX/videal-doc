@@ -2,11 +2,12 @@ import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { PageHeader, Card, Button, Pill } from "@/components/ui";
-import { officeYmd, officeClock, fmtTimeOmsk, fmtDate, officeWeekMonday, addYmd } from "@/lib/dates";
+import { officeYmd, officeClock, officeHm, fmtTimeOmsk, fmtDate, officeWeekMonday, addYmd } from "@/lib/dates";
 import { fullName } from "@/lib/names";
 import { attendanceSourceLabel, flagLabel, leaveCoversYmd, leaveShort, LEAVE_TYPES, onTimesheet } from "@/lib/presence";
 import { FlagOk } from "./FlagOk";
 import { ControlSearch } from "./ControlSearch";
+import { DayTimeEdit } from "./DayTimeEdit";
 import { USER_SAFE_SELECT } from "@/lib/user-public";
 import { Avatar } from "@/components/Avatar";
 import { STAGE_LABEL, STATUS_LABEL, STATUS_PILL } from "@/lib/prod";
@@ -61,6 +62,16 @@ function hit(q: string, parts: Array<string | null | undefined>) {
     .includes(n);
 }
 
+function markText(inAt: Date | null, outAt: Date | null, outSource: string) {
+  const inn = inAt ? fmtTimeOmsk(inAt) : "";
+  const out = outAt ? fmtTimeOmsk(outAt) : "";
+  const forgot = outAt && outSource === "forgot" ? " забыл" : "";
+  if (inn && out) return `${inn}–${out}${forgot}`;
+  if (inn) return `${inn}–`;
+  if (out) return `уход ${out}${forgot}`;
+  return "";
+}
+
 function hrefFor(opts: { tab: Tab; from: string; to: string; q: string }) {
   const p = new URLSearchParams();
   if (opts.tab !== "people") p.set("tab", opts.tab);
@@ -76,7 +87,8 @@ export default async function ControlPage({
 }: {
   searchParams: Promise<{ from?: string; to?: string; tab?: string; q?: string }>;
 }) {
-  await requirePermission("presence.review");
+  const me = await requirePermission("presence.review");
+  const canEditDay = me.roleCode === "superadmin";
   const sp = await searchParams;
   const rawFrom =
     sp.from && /^\d{4}-\d{2}-\d{2}$/.test(sp.from)
@@ -213,7 +225,37 @@ export default async function ControlPage({
   const timePeople = people.filter((p) =>
     onTimesheet({ login: p.login, lastName: p.lastName, firstName: p.firstName, roleCode: p.role.code }),
   );
-  const timeHit = timePeople.filter((p) => hit(q, [fullName(p), p.login, p.position?.name, p.department?.name]));
+  const listed = new Set(timePeople.map((p) => p.id));
+  const historyPeople = canEditDay
+    ? [...new Map(days.filter((d) => !listed.has(d.userId)).map((d) => [d.userId, d.user])).values()].sort(
+        (a, b) => a.lastName.localeCompare(b.lastName, "ru") || a.firstName.localeCompare(b.firstName, "ru"),
+      )
+    : [];
+  const sheetPeople = [
+    ...timePeople.map((p) => ({
+      id: p.id,
+      login: p.login,
+      lastName: p.lastName,
+      firstName: p.firstName,
+      middleName: p.middleName,
+      status: p.status,
+      positionName: p.position?.name || "",
+      departmentName: p.department?.name || "",
+    })),
+    ...historyPeople.map((p) => ({
+      id: p.id,
+      login: p.login,
+      lastName: p.lastName,
+      firstName: p.firstName,
+      middleName: p.middleName,
+      status: p.status,
+      positionName: "",
+      departmentName: "",
+    })),
+  ];
+  const timeHit = sheetPeople.filter((p) =>
+    hit(q, [fullName(p), p.login, p.positionName, p.departmentName, p.status]),
+  );
 
   const ymds: string[] = [];
   for (let d = from; d <= to; d = addDays(d, 1)) ymds.push(d);
@@ -223,7 +265,7 @@ export default async function ControlPage({
     { id: "review", label: "На проверке", count: review.length },
     { id: "late", label: "Просрочки", count: late.length },
     { id: "flags", label: "Отклонения", count: flagsOwn.length },
-    { id: "time", label: "Табель", count: timePeople.length },
+    { id: "time", label: "Табель", count: sheetPeople.length },
   ];
   const tabs = tabMeta.filter((t) => VISIBLE_TABS.includes(t.id));
 
@@ -443,6 +485,11 @@ export default async function ControlPage({
       {tab === "time" ? (
         <Card className="overflow-x-auto">
           <h2 className="font-serif text-xl text-navy">Табель</h2>
+          {canEditDay ? (
+            <p className="mt-1 text-sm text-muted">
+              Правка прихода и ухода — только суперадмин. Пустое поле стирает отметку, время омское.
+            </p>
+          ) : null}
           {timeHit.length === 0 ? (
             <p className="mt-3 text-sm text-muted">{q ? `Никого не нашлось по запросу «${q}».` : "Никого."}</p>
           ) : (
@@ -460,20 +507,30 @@ export default async function ControlPage({
               <tbody>
                 {timeHit.map((p) => (
                   <tr key={p.id} className="border-t border-line">
-                    <td className="py-2 pr-3 font-semibold text-navy">{fullName(p)}</td>
+                    <td className="py-2 pr-3 align-top font-semibold text-navy">
+                      {fullName(p)}
+                      {p.status !== "active" ? (
+                        <span className="ml-1 text-xs font-normal text-muted">
+                          {p.status === "dismissed" ? "уволен" : p.status}
+                        </span>
+                      ) : null}
+                    </td>
                     {ymds.map((d) => {
                       const row = byUser.get(p.id)?.get(d);
                       const rest = !officeClock(new Date(`${d}T12:00:00+06:00`)).weekdayWork;
                       const away = (leaveByUser.get(p.id) || []).find((r) => leaveCoversYmd(r.type, r.payloadJson, d));
                       const awayLabel = away ? leaveShort(away.type) : "";
+                      const marked = Boolean(row?.inAt || row?.outAt);
                       return (
-                        <td key={d} className={`px-1 py-2 ${rest ? "bg-paper-2/60 text-muted" : ""}`}>
-                          {row?.inAt ? (
+                        <td key={d} className={`px-1 py-2 align-top ${rest ? "bg-paper-2/60 text-muted" : ""}`}>
+                          {marked && row ? (
                             <span>
-                              {fmtTimeOmsk(row.inAt)}
-                              {row.outAt ? `–${fmtTimeOmsk(row.outAt)}${row.outSource === "forgot" ? " забыл" : ""}` : "–"}
+                              {markText(row.inAt, row.outAt, row.outSource)}
                               {row.inSource ? (
                                 <span className="ml-1 text-xs text-muted">{attendanceSourceLabel(row.inSource)}</span>
+                              ) : null}
+                              {row.outSource === "admin_edit" && row.inSource !== "admin_edit" ? (
+                                <span className="ml-1 text-xs text-muted">правка ухода</span>
                               ) : null}
                             </span>
                           ) : awayLabel ? (
@@ -483,6 +540,14 @@ export default async function ControlPage({
                           ) : (
                             <Pill tone="wait">нет</Pill>
                           )}
+                          {canEditDay ? (
+                            <DayTimeEdit
+                              userId={p.id}
+                              ymd={d}
+                              inHm={row?.inAt ? officeHm(row.inAt) : ""}
+                              outHm={row?.outAt ? officeHm(row.outAt) : ""}
+                            />
+                          ) : null}
                         </td>
                       );
                     })}

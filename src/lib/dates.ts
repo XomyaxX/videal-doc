@@ -35,6 +35,67 @@ export function officeYmd(d = new Date()) {
   }).format(d);
 }
 
+export function isOfficeYmd(ymd: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return false;
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+
+/** `HH:MM` in Asia/Omsk, or "" when empty. */
+export function officeHm(d: Date | string | null | undefined) {
+  if (!d) return "";
+  const date = typeof d === "string" ? new Date(d) : d;
+  if (Number.isNaN(date.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: OFFICE_TZ,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value || "";
+  const hour = get("hour");
+  const minute = get("minute");
+  if (!hour || !minute) return "";
+  return `${hour}:${minute}`;
+}
+
+/**
+ * Office stamp for a calendar day in Asia/Omsk.
+ * Accepts null/"" (clear), `HH:MM` / `HH:MM:SS`, `YYYY-MM-DDTHH:MM` without a zone (Omsk),
+ * or an ISO instant with `Z` or a numeric offset. The instant must fall on `ymd` in Omsk.
+ */
+export function parseOfficeStamp(
+  ymd: string,
+  raw: unknown,
+): { ok: true; at: Date | null } | { ok: false; error: string } {
+  if (raw === null) return { ok: true, at: null };
+  if (typeof raw !== "string") return { ok: false, error: "Неверное время" };
+  const s = raw.trim();
+  if (!s) return { ok: true, at: null };
+
+  let iso = "";
+  const hm = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (hm) {
+    const hour = Number(hm[1]);
+    const minute = Number(hm[2]);
+    const second = Number(hm[3] || "0");
+    if (hour > 23 || minute > 59 || second > 59) return { ok: false, error: "Неверное время" };
+    iso = `${ymd}T${String(hour).padStart(2, "0")}:${hm[2]}:${String(second).padStart(2, "0")}+06:00`;
+  } else if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?$/.test(s)) {
+    iso = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s) ? `${s}:00+06:00` : `${s}+06:00`;
+  } else if (/^\d{4}-\d{2}-\d{2}T/.test(s) && /(?:Z|[+-]\d{2}:?\d{2})$/i.test(s)) {
+    iso = s;
+  } else {
+    return { ok: false, error: "Неверное время" };
+  }
+
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return { ok: false, error: "Неверное время" };
+  if (officeYmd(date) !== ymd) return { ok: false, error: "Время не в этот день по Омску" };
+  return { ok: true, at: date };
+}
+
 export function addYmd(ymd: string, n: number) {
   const [y, m, d] = ymd.split("-").map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d + n));
