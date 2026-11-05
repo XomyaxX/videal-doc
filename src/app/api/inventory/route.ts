@@ -3,13 +3,15 @@ import { getSession } from "@/lib/auth";
 import { userCan } from "@/lib/types";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
+import { inventoryVisibilityWhere } from "@/lib/writeoff";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Нужно войти" }, { status: 401 });
   const manage = userCan(session.user, "inventory.manage");
+  const where = inventoryVisibilityWhere(manage, session.user.id, req.nextUrl.searchParams.get("status"));
   const rows = await prisma.inventoryItem.findMany({
-    where: manage ? { deletedAt: null } : { deletedAt: null, userId: session.user.id },
+    where,
     include: {
       user: {
         select: {
@@ -24,6 +26,20 @@ export async function GET() {
     },
     orderBy: [{ holderName: "asc" }, { invNo: "asc" }, { name: "asc" }],
   });
+  const writtenIds = rows.filter((r) => r.status === "written_off").map((r) => r.id);
+  const linkByItem = new Map<string, { id: string; number: string }>();
+  if (writtenIds.length) {
+    const links = await prisma.writeOffLine.findMany({
+      where: { inventoryItemId: { in: writtenIds }, sheet: { status: "done" } },
+      select: { inventoryItemId: true, sheet: { select: { id: true, number: true, closedAt: true } } },
+    });
+    links.sort((a, b) => (b.sheet.closedAt?.getTime() || 0) - (a.sheet.closedAt?.getTime() || 0));
+    for (const link of links) {
+      if (!linkByItem.has(link.inventoryItemId)) {
+        linkByItem.set(link.inventoryItemId, { id: link.sheet.id, number: link.sheet.number });
+      }
+    }
+  }
   const people = manage
     ? await prisma.user.findMany({
         where: { deletedAt: null, status: "active" },
@@ -31,7 +47,11 @@ export async function GET() {
         orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
       })
     : [];
-  return NextResponse.json({ rows, people, manage });
+  return NextResponse.json({
+    rows: rows.map((r) => ({ ...r, writeOff: linkByItem.get(r.id) || null })),
+    people,
+    manage,
+  });
 }
 
 export async function POST(req: NextRequest) {

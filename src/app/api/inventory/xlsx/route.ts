@@ -1,18 +1,20 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { getSession } from "@/lib/auth";
 import { userCan } from "@/lib/types";
 import { prisma } from "@/lib/prisma";
 import { fullName } from "@/lib/names";
 import { USER_SAFE_SELECT } from "@/lib/user-public";
+import { inventoryExportWhere, inventoryStatusLabel } from "@/lib/writeoff";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session || !userCan(session.user, "inventory.manage")) {
     return new NextResponse("Нет права", { status: 403 });
   }
+  const includeWrittenOff = req.nextUrl.searchParams.get("includeWrittenOff") === "1";
   const rows = await prisma.inventoryItem.findMany({
-    where: { deletedAt: null },
+    where: inventoryExportWhere(includeWrittenOff),
     include: { user: { select: USER_SAFE_SELECT } },
     orderBy: [{ holderName: "asc" }, { invNo: "asc" }],
   });
@@ -31,6 +33,7 @@ export async function GET() {
     { header: "Накопитель", key: "pcDisk", width: 36 },
     { header: "Материнская плата", key: "pcMb", width: 28 },
     { header: "Примечание", key: "note", width: 28 },
+    ...(includeWrittenOff ? [{ header: "Статус", key: "status", width: 18 }] : []),
   ];
   ws.getRow(1).font = { bold: true };
   for (const r of rows) {
@@ -47,6 +50,7 @@ export async function GET() {
       pcDisk: r.pcDisk,
       pcMb: r.pcMb,
       note: r.note,
+      ...(includeWrittenOff ? { status: inventoryStatusLabel(r.status) } : {}),
     });
   }
   const buf = Buffer.from(await wb.xlsx.writeBuffer());
