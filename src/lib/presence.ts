@@ -256,6 +256,7 @@ export function attendanceSourceLabel(source: string) {
   if (source === "lan") return "ПК";
   if (source === "auto") return "сайт";
   if (source === "manual") return "кнопка";
+  if (source === "admin_edit") return "правка";
   return source || "";
 }
 
