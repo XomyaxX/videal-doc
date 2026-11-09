@@ -138,6 +138,7 @@ model User {
   jobMembers        JobMember[]
   jobMessages       JobMessage[]
   jobFiles          JobMessageFile[]   @relation("JobFileUploader")
+  suspensions       UserSuspension[]   @relation("Suspended")
   prodChatMessages  ProdChatMessage[]
   prodChatFiles     ProdChatFile[]     @relation("ProdChatFileUploader")
   devices           UserDevice[]
@@ -155,6 +156,8 @@ model User {
   tmcAuthored       TmcSheet[]       @relation("TmcAuthor")
   inventoryAudits   InventoryAudit[] @relation("AuditSubject")
   inventoryAuditsAuthored InventoryAudit[] @relation("AuditAuthor")
+  inventoryRounds         InventoryRound[] @relation("RoundConductor")
+  writeOffSheets          WriteOffSheet[]  @relation("WriteOffAuthor")
   chatIdentity      ChatIdentity?
   chatMembers       ChatMember[]
   chatMessages      ChatMessage[]
@@ -177,6 +180,9 @@ model User {
   pipeProjectsAuthored PipeProject[]       @relation("PipeProjectAuthor")
   pipeGroupMembers     PipeGroupMember[]
   pipeGridSeats        PipeProjectWorker[]
+  supportCreated       SupportTicket[]        @relation("SupportTicketCreatedBy")
+  supportAssigned      SupportTicket[]        @relation("SupportTicketAssignee")
+  supportComments      SupportTicketComment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -377,6 +383,22 @@ model ClearanceSheet {
   @@index([status])
 }
 
+model InventoryRound {
+  id        String           @id @default(cuid())
+  number    String           @unique
+  startedAt DateTime         @default(now())
+  userId    String
+  user      User             @relation("RoundConductor", fields: [userId], references: [id])
+  status    String           @default("open")
+  closedAt  DateTime?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  audits    InventoryAudit[]
+
+  @@index([status])
+  @@index([userId])
+}
+
 model InventoryAudit {
   id        String               @id @default(cuid())
   number    String
@@ -384,6 +406,8 @@ model InventoryAudit {
   user      User                 @relation("AuditSubject", fields: [userId], references: [id])
   authorId  String
   author    User                 @relation("AuditAuthor", fields: [authorId], references: [id])
+  roundId   String?
+  round     InventoryRound?      @relation(fields: [roundId], references: [id], onDelete: SetNull)
   status    String               @default("open")
   note      String               @default("")
   closedAt  DateTime?
@@ -393,6 +417,7 @@ model InventoryAudit {
 
   @@index([userId])
   @@index([status])
+  @@index([roundId])
 }
 
 model InventoryAuditLine {
@@ -448,6 +473,48 @@ model ClearanceLine {
   returned        Boolean        @default(false)
   note            String         @default("")
   sortOrder       Int            @default(0)
+}
+
+
+model WriteOffSheet {
+  id             String         @id @default(cuid())
+  number         String         @unique
+  actDate        DateTime       @default(now())
+  authorId       String
+  author         User           @relation("WriteOffAuthor", fields: [authorId], references: [id])
+  reason         String         @default("unusable")
+  reasonText     String         @default("")
+  basis          String         @default("")
+  note           String         @default("")
+  commissionJson String         @default("[]")
+  printJson      String         @default("")
+  status         String         @default("open")
+  closedAt       DateTime?
+  closedById     String         @default("")
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  lines          WriteOffLine[]
+
+  @@index([status])
+  @@index([authorId])
+}
+
+model WriteOffLine {
+  id              String        @id @default(cuid())
+  sheetId         String
+  sheet           WriteOffSheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  inventoryItemId String        @default("")
+  title           String
+  invNo           String        @default("")
+  qty             Int           @default(1)
+  reason          String        @default("")
+  note            String        @default("")
+  prevUserId      String        @default("")
+  prevHolderName  String        @default("")
+  sortOrder       Int           @default(0)
+
+  @@index([sheetId])
+  @@index([inventoryItemId])
 }
 
 model StoredFile {
@@ -1031,6 +1098,7 @@ model AppSettings {
   imapFolder   String  @default("INBOX")
   lastRemindAt    DateTime?
   lastBirthdayYmd String    @default("")
+  lastHolidayGreetYmd String @default("")
   lastDutyYmd     String    @default("")
   dutyOverrides   String    @default("{}")
   prodDatesNeedApproval Boolean @default(false)
@@ -1070,6 +1138,7 @@ model Episode {
   jobs     Job[]
   tasks    Task[]
   currentForUsers User[] @relation("UserCurrentEpisode")
+  pipeProjects PipeProject[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1194,6 +1263,12 @@ model PipeProject {
   dept        String
   name        String
   published   Boolean       @default(false)
+  completedAt   DateTime?
+  completedById String?
+  reportPath        String    @default("")
+  reportGeneratedAt DateTime?
+  episodeId   String?
+  episode     Episode?      @relation(fields: [episodeId], references: [id], onDelete: SetNull)
   createdById String
   createdBy   User          @relation("PipeProjectAuthor", fields: [createdById], references: [id])
   chapters    PipeChapter[]
@@ -1204,6 +1279,8 @@ model PipeProject {
   updatedAt   DateTime      @updatedAt
 
   @@index([dept, createdAt])
+  @@index([dept, completedAt])
+  @@index([episodeId])
 }
 
 model PipeChapter {
@@ -1444,6 +1521,7 @@ model TaskFile {
   absPath      String
   uncPath      String   @default("")
   kind         String   @default("playblast")
+  sortOrder    Int      @default(0)
   uploadedById String
   uploadedBy   User     @relation("TaskFileUploader", fields: [uploadedById], references: [id])
   createdAt    DateTime @default(now())
@@ -1743,4 +1821,80 @@ model ChatLinkOffer {
   createdAt  DateTime @default(now())
 
   @@index([userId, expiresAt])
+}
+
+model UserSuspension {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation("Suspended", fields: [userId], references: [id], onDelete: Cascade)
+  fromYmd     String
+  toYmd       String
+  reason      String    @default("")
+  createdById String
+  readOnly    Boolean   @default(true)
+  liftedAt    DateTime?
+  liftedById  String?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId, fromYmd])
+}
+
+model Holiday {
+  id          String    @id @default(cuid())
+  ymd         String    @unique
+  title       String
+  kind        String    @default("federal")
+  region      String    @default("RU")
+  dayOff      Boolean   @default(true)
+  greet       Boolean   @default(true)
+  greetText   String?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+}
+
+// IT-заявки (support). category: pc|server|crm|site|network|other; priority: low|normal|high;
+// status: open|in_progress|waiting|done|cancelled. Strings (как во всём проекте), валидация в src/lib/support.ts.
+model SupportTicket {
+  id          String    @id @default(cuid())
+  createdById String
+  createdBy   User      @relation("SupportTicketCreatedBy", fields: [createdById], references: [id])
+  assigneeId  String?
+  assignee    User?     @relation("SupportTicketAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  category    String
+  priority    String    @default("normal")
+  status      String    @default("open")
+  title       String
+  body        String
+  assetHint   String?
+  comments    SupportTicketComment[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  closedAt    DateTime?
+
+  @@index([status, category])
+  @@index([createdById])
+  @@index([assigneeId])
+}
+
+model SupportTicketComment {
+  id        String        @id @default(cuid())
+  ticketId  String
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User          @relation(fields: [authorId], references: [id])
+  body      String
+  system    Boolean       @default(false)
+  createdAt DateTime      @default(now())
+
+  @@index([ticketId, createdAt])
+}
+
+// Настройки IT-заявок: кто получает уведомления о новых заявках и ведёт очередь (кроме admin/superadmin/support.manage).
+model SupportConfig {
+  id            String   @id @default("default")
+  ownerUserIds  String   @default("[]")
+  notifyEmail   String?
+  updatedAt     DateTime @updatedAt
 }

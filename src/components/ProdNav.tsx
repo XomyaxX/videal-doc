@@ -14,7 +14,7 @@ export function ProdNav({
   const items = [
     { href: "/prod", label: "Мои задачи", match: (p: string) => p === "/prod" },
     { href: "/prod/pipeline", label: "Пайплайн", match: (p: string) => p.startsWith("/prod/pipeline") && !p.startsWith("/prod/pipeline/series") },
-    { href: "/prod/pipeline/series", label: "Серии", match: (p: string) => p.startsWith("/prod/pipeline/series") },
+    { href: "/prod/done", label: "Завершённые проекты", match: (p: string) => p.startsWith("/prod/done") },
     { href: "/prod/board", label: "Доска", match: (p: string) => p.startsWith("/prod/board") },
     ...(canCreate
       ? [{ href: "/prod/trash", label: "Удалённые", match: (p: string) => p.startsWith("/prod/trash") }]
@@ -32,7 +32,7 @@ export function ProdNav({
             key={i.href}
             href={i.href}
             className={`rounded-xl px-3 py-2 text-sm font-semibold ${
-              on ? "bg-navy !text-white" : "border border-line bg-white text-navy hover:border-gold"
+              on ? "bg-navy !text-white" : "border border-line bg-card text-navy hover:border-gold"
             }`}
           >
             {i.label}

@@ -19,6 +19,7 @@ import {
   Home,
   Inbox,
   Library,
+  LifeBuoy,
   Menu,
   MessageCircle,
   Package,
@@ -59,6 +60,7 @@ const NAV = [
   { href: "/employees", label: "Сотрудники", icon: Users, perm: "users.view" as const, section: "office" },
   { href: "/inventory", label: "Инвентарь", icon: Boxes, perm: null, section: "office" },
   { href: "/duty", label: "Графики", icon: CalendarCheck, perm: null, section: "office" },
+  { href: "/support", label: "IT-заявки", icon: LifeBuoy, perm: null, section: "office" },
   { href: "/control", label: "Контроль", icon: ClipboardCheck, perm: "presence.review" as const, section: "office" },
   { href: "/profile", label: "Профиль", icon: UserRound, perm: null, section: "cabinet" },
   { href: "/admin", label: "Админка", icon: Settings, perm: "users.manage" as const, section: "cabinet" },
@@ -126,6 +128,8 @@ export function AppShell({
   chatUnread = 0,
   orgShort = "ООО «Видеаль Медиа»",
   prodTaskCount = 0,
+  supportEnabled = false,
+  supportCount = 0,
   children,
 }: {
   user: SessionUser;
@@ -133,12 +137,15 @@ export function AppShell({
   chatUnread?: number;
   orgShort?: string;
   prodTaskCount?: number;
+  supportEnabled?: boolean;
+  supportCount?: number;
   children: React.ReactNode;
 }) {
   const path = usePathname();
   const isChat = path.startsWith("/chat");
   const slim = slimEmployeeNav(user);
   const items = NAV.filter((i) => {
+    if (i.href === "/support" && !supportEnabled) return false;
     if (user.roleCode === "remote" && (i.href === "/inventory" || i.href === "/duty" || i.href === "/library")) return false;
     return !i.perm || userCan(user, i.perm);
   });
@@ -150,6 +157,28 @@ export function AppShell({
   useEffect(() => {
     setLiveChat(chatUnread);
   }, [chatUnread]);
+  const [liveSupport, setLiveSupport] = useState(supportCount);
+  useEffect(() => {
+    setLiveSupport(supportCount);
+  }, [supportCount]);
+  useEffect(() => {
+    if (!supportEnabled) return;
+    const pull = async () => {
+      if (document.visibilityState === "hidden") return;
+      const res = await fetch("/api/support/badge", { cache: "no-store" }).catch(() => null);
+      if (!res || !res.ok) return;
+      const data = await res.json().catch(() => ({}));
+      if (typeof data.count === "number") setLiveSupport(data.count);
+    };
+    void pull();
+    const onChange = () => void pull();
+    window.addEventListener("vd-support-changed", onChange);
+    const t = setInterval(() => void pull(), 15000);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener("vd-support-changed", onChange);
+    };
+  }, [supportEnabled, path]);
   useEffect(() => {
     let paused = false;
     const onHeavy = (e: Event) => {
@@ -184,7 +213,7 @@ export function AppShell({
           <div className="font-serif text-2xl leading-none">Видеал.Док</div>
           <div className="mt-1 text-xs text-white/60">Электронный документооборот</div>
         </div>
-        <nav className="flex-1 space-y-3 overflow-y-auto px-3">
+        <nav className="vd-sidenav flex-1 space-y-3 overflow-y-auto px-3">
           {slim ? (
             <>
               <div className="space-y-1">
@@ -195,7 +224,7 @@ export function AppShell({
                     label={item.href === "/prod" ? "Мои задачи" : item.label}
                     icon={item.icon}
                     path={path}
-                    badge={item.href === "/chat" ? liveChat : item.href === "/prod" ? prodTaskCount : 0}
+                    badge={item.href === "/chat" ? liveChat : item.href === "/prod" ? prodTaskCount : item.href === "/support" ? liveSupport : 0}
                   />
                 ))}
               </div>
@@ -210,7 +239,7 @@ export function AppShell({
                         label={item.label}
                         icon={item.icon}
                         path={path}
-                        badge={item.href === "/chat" ? liveChat : 0}
+                        badge={item.href === "/chat" ? liveChat : item.href === "/support" ? liveSupport : 0}
                       />
                     ))}
                   </div>
@@ -232,7 +261,7 @@ export function AppShell({
                         label={item.label}
                         icon={item.icon}
                         path={path}
-                        badge={item.href === "/chat" ? liveChat : 0}
+                        badge={item.href === "/chat" ? liveChat : item.href === "/support" ? liveSupport : 0}
                       />
                     ))}
                   </div>
@@ -296,7 +325,7 @@ export function AppShell({
           className={
             isChat
               ? "flex min-h-0 w-full flex-1 flex-col p-0 pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0"
-              : "mx-auto w-full max-w-6xl flex-1 px-4 py-5 pb-24 md:px-6 md:py-8 md:pb-8"
+              : "vd-main mx-auto w-full max-w-6xl flex-1 px-4 py-5 pb-24 md:px-6 md:py-8 md:pb-8"
           }
         >
           {children}
@@ -373,7 +402,7 @@ export function AppShell({
                           icon={item.icon}
                           path={path}
                           onClick={() => setMore(false)}
-                          badge={item.href === "/chat" ? liveChat : 0}
+                          badge={item.href === "/chat" ? liveChat : item.href === "/support" ? liveSupport : 0}
                         />
                       ))}
                     </div>

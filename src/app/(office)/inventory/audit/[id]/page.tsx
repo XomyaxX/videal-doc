@@ -4,6 +4,7 @@ import { requirePermission } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/ui";
 import { fullName } from "@/lib/names";
+import { loadRoundWalk } from "@/lib/inventory-round-server";
 import { AuditSession } from "./AuditSession";
 
 export default async function AuditPage({ params }: { params: Promise<{ id: string }> }) {
@@ -17,6 +18,8 @@ export default async function AuditPage({ params }: { params: Promise<{ id: stri
     },
   });
   if (!row) notFound();
+  const walk = row.status !== "open" ? await loadRoundWalk(row.userId) : null;
+  const round = walk && row.roundId === walk.id ? walk : null;
   const people = await prisma.user.findMany({
     where: { deletedAt: null, status: "active" },
     select: { id: true, lastName: true, firstName: true, middleName: true },
@@ -29,10 +32,11 @@ export default async function AuditPage({ params }: { params: Promise<{ id: stri
       </Link>
       <PageHeader
         title={`Инвентаризация ${row.number}`}
-        subtitle={`${fullName(row.user)}${row.user.department?.name ? ` · ${row.user.department.name}` : ""}`}
+        subtitle={`${fullName(row.user)}${row.user.department?.name ? ` · ${row.user.department.name}` : ""}${round ? ` · тур ${round.number}` : ""}`}
       />
       <AuditSession
         closed={row.status !== "open"}
+        round={round}
         sheetId={row.id}
         people={people.map((p) => ({ id: p.id, name: fullName(p) }))}
         lines={row.lines.map((l) => ({

@@ -3,6 +3,8 @@ import { getSession } from "@/lib/auth";
 import { userCan } from "@/lib/types";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
+import { employeeBlockReason } from "@/lib/inventory-round";
+import { findOpenRound, loadRoundWalk } from "@/lib/inventory-round-server";
 
 async function applyLine(opts: {
   itemId: string;
@@ -30,10 +32,11 @@ async function applyLine(opts: {
   if (opts.action === "transfer") {
     if (!opts.toUserId) throw new Error("Укажите, кому передать");
     const person = await prisma.user.findFirst({
-      where: { id: opts.toUserId, deletedAt: null },
-      select: { id: true },
+      where: { id: opts.toUserId },
+      select: { id: true, status: true, deletedAt: true },
     });
-    if (!person) throw new Error("Нет такого сотрудника");
+    const block = employeeBlockReason(person, "recipient");
+    if (block) throw new Error(block);
     await prisma.inventoryItem.update({
       where: { id: opts.itemId },
       data: { userId: opts.toUserId, status: "ok", holderName: "" },
@@ -63,9 +66,14 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         await applyLine({ itemId: l.inventoryItemId, action: "question", toUserId: "", note: "не отмечено при обходе" });
       }
     }
+    const openRound = await findOpenRound();
     await prisma.inventoryAudit.update({
       where: { id },
-      data: { status: "done", closedAt: new Date() },
+      data: {
+        status: "done",
+        closedAt: new Date(),
+        ...(openRound && row.roundId !== openRound.id ? { roundId: openRound.id } : {}),
+      },
     });
     await audit({
       userId: session.user.id,
@@ -73,7 +81,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       entity: "inventory-audit",
       entityId: id,
     });
-    return NextResponse.json({ ok: true });
+    const walk = await loadRoundWalk(row.userId);
+    return NextResponse.json({ ok: true, round: walk });
   }
 
   const lineId = String(body.lineId || "");

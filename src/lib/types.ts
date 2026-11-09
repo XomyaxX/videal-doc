@@ -25,8 +25,11 @@ export type SessionUser = {
   positionName: string | null;
   status: string;
   prodScope: string;
+  /** Active suspension today (Omsk), if any. */
+  suspension?: { id: string; fromYmd: string; toYmd: string; reason: string; createdById: string; readOnly: boolean } | null;
 };
 
 export function userCan(user: { roleCode: string; permissions: string[] }, code: PermissionCode): boolean {
+  if ((user as { suspension?: { readOnly?: boolean } | null }).suspension?.readOnly) return user.permissions.includes(code);
   return user.roleCode === "superadmin" || user.permissions.includes(code);
 }
