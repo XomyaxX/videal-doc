@@ -73,7 +73,7 @@ export default async function InventoryPage() {
         }
       />
       {manage ? (
-        <RoundBar round={walk ? { number: walk.number, checked: walk.checked, total: walk.total } : null} />
+        <RoundBar round={walk ? { id: walk.id, number: walk.number, checked: walk.checked, total: walk.total } : null} />
       ) : null}
       <InventoryTable />
       {manage ? (

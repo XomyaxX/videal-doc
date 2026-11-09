@@ -15,6 +15,7 @@ export default async function AuditPage({ params }: { params: Promise<{ id: stri
     include: {
       user: { select: { lastName: true, firstName: true, middleName: true, department: { select: { name: true } } } },
       lines: { orderBy: { sortOrder: "asc" } },
+      round: { select: { id: true, number: true, status: true } },
     },
   });
   if (!row) notFound();
@@ -37,6 +38,7 @@ export default async function AuditPage({ params }: { params: Promise<{ id: stri
       <AuditSession
         closed={row.status !== "open"}
         round={round}
+        roundSheet={row.round ? { id: row.round.id, number: row.round.number, interim: row.round.status !== "done" } : null}
         sheetId={row.id}
         people={people.map((p) => ({ id: p.id, name: fullName(p) }))}
         lines={row.lines.map((l) => ({

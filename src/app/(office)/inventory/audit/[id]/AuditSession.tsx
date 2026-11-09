@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { Button, Card, Input } from "@/components/ui";
 import type { RoundWalk } from "@/lib/inventory-round";
+import { ItemFinder } from "../../ItemFinder";
 
 type Line = {
   id: string;
@@ -21,12 +22,14 @@ export function AuditSession({
   people,
   closed,
   round = null,
+  roundSheet = null,
 }: {
   sheetId: string;
   lines: Line[];
   people: { id: string; name: string }[];
   closed: boolean;
   round?: RoundWalk | null;
+  roundSheet?: { id: string; number: string; interim: boolean } | null;
 }) {
   const router = useRouter();
   const [lines, setLines] = useState(initial);
@@ -34,6 +37,7 @@ export function AuditSession({
   const [msg, setMsg] = useState("");
   const [localClosed, setLocalClosed] = useState(closed);
   const [walk, setWalk] = useState<RoundWalk | null>(closed ? round : null);
+  const [sheetOffer, setSheetOffer] = useState<{ id: string; number: string } | null>(null);
   const done = closed || localClosed;
 
   const pending = useMemo(() => lines.filter((l) => !l.action).length, [lines]);
@@ -120,7 +124,7 @@ export function AuditSession({
       setMsg(data.error || "Не удалось закрыть тур");
       return;
     }
-    router.push("/inventory");
+    if (data.id) setSheetOffer({ id: data.id, number: data.number });
     router.refresh();
   }
 
@@ -148,6 +152,41 @@ export function AuditSession({
           </div>
         </Card>
       ) : null}
+      {sheetOffer ? (
+        <Card className="border-gold">
+          <p className="text-sm text-navy">Тур {sheetOffer.number} закрыт. Сводная ведомость готова.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button href={`/api/inventory/rounds/${sheetOffer.id}/pdf`} variant="secondary">
+              Скачать PDF
+            </Button>
+            <Button href={`/api/inventory/rounds/${sheetOffer.id}/xlsx`} variant="secondary">
+              Скачать XLSX
+            </Button>
+            <Button href={`/inventory/rounds/${sheetOffer.id}`} variant="ghost">
+              Карточка тура
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+      {!done ? (
+        <ItemFinder audits={[{ id: sheetId, label: "этот обход" }]} people={people} onLine={(line) => setLines((prev) => (prev.some((row) => row.id === line.id) ? prev.map((row) => (row.id === line.id ? line : row)) : [...prev, line]))} />
+      ) : null}
+      <div className="flex flex-wrap gap-2">
+        <Button href={`/api/inventory/audit/${sheetId}/pdf`} variant="ghost">
+          PDF этого обхода
+        </Button>
+        {roundSheet ? (
+          <>
+            <Button href={`/api/inventory/rounds/${roundSheet.id}/pdf`} variant="ghost">
+              PDF тура
+            </Button>
+            <Button href={`/api/inventory/rounds/${roundSheet.id}/xlsx`} variant="ghost">
+              XLSX тура
+            </Button>
+            {roundSheet.interim ? <span className="self-center text-xs text-gold">промежуточная, тур не закрыт</span> : null}
+          </>
+        ) : null}
+      </div>
       <p className="text-sm text-muted">
         {done
           ? "Обход закрыт."

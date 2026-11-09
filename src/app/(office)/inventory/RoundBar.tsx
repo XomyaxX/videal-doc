@@ -4,14 +4,32 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button, Card } from "@/components/ui";
 
+function SheetLinks({ id, interim }: { id: string; interim: boolean }) {
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      <Button href={`/inventory/rounds/${id}`} variant="ghost">
+        Карточка тура
+      </Button>
+      <Button href={`/api/inventory/rounds/${id}/pdf`} variant="secondary">
+        PDF
+      </Button>
+      <Button href={`/api/inventory/rounds/${id}/xlsx`} variant="secondary">
+        XLSX
+      </Button>
+      {interim ? <span className="text-xs text-gold">промежуточная, тур не закрыт</span> : null}
+    </span>
+  );
+}
+
 export function RoundBar({
   round,
 }: {
-  round: { number: string; checked: number; total: number } | null;
+  round: { id: string; number: string; checked: number; total: number } | null;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
+  const [closed, setClosed] = useState<{ id: string; number: string } | null>(null);
 
   async function start() {
     setBusy("start");
@@ -40,6 +58,7 @@ export function RoundBar({
       setErr(data.error || "Не удалось закрыть тур");
       return;
     }
+    setClosed({ id: data.id, number: data.number });
     router.refresh();
   }
 
@@ -53,16 +72,38 @@ export function RoundBar({
               Проверено {round.checked} из {round.total}. В форме нового обхода только те, кого в этом туре ещё не закрыли.
             </p>
           </div>
-          <Button type="button" variant="secondary" disabled={Boolean(busy)} onClick={() => void close()}>
-            {busy === "close" ? "Закрываем…" : "Закрыть тур"}
-          </Button>
+          <span className="flex flex-wrap items-center gap-2">
+            <SheetLinks id={round.id} interim />
+            <Button type="button" variant="secondary" disabled={Boolean(busy)} onClick={() => void close()}>
+              {busy === "close" ? "Закрываем…" : "Закрыть тур"}
+            </Button>
+          </span>
         </div>
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-muted">Тур не открыт. Обход по одному сотруднику работает как раньше.</p>
-          <Button type="button" disabled={Boolean(busy)} onClick={() => void start()}>
-            {busy === "start" ? "Открываем…" : "Начать новый тур"}
-          </Button>
+          <div>
+            <p className="text-sm text-muted">Тур не открыт. Обход по одному сотруднику работает как раньше.</p>
+            {closed ? (
+              <p className="mt-2 text-sm text-navy">
+                Тур {closed.number} закрыт. Сводная ведомость:{" "}
+                <a className="font-semibold text-gold" href={`/api/inventory/rounds/${closed.id}/pdf`}>
+                  PDF
+                </a>
+                {" · "}
+                <a className="font-semibold text-gold" href={`/api/inventory/rounds/${closed.id}/xlsx`}>
+                  XLSX
+                </a>
+              </p>
+            ) : null}
+          </div>
+          <span className="flex flex-wrap gap-2">
+            <Button href="/inventory/rounds" variant="secondary">
+              Туры и ведомости
+            </Button>
+            <Button type="button" disabled={Boolean(busy)} onClick={() => void start()}>
+              {busy === "start" ? "Открываем…" : "Начать новый тур"}
+            </Button>
+          </span>
         </div>
       )}
       {err ? <p className="mt-2 text-sm text-bad">{err}</p> : null}
