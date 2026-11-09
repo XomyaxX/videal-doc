@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { Button, Card, Input } from "@/components/ui";
+import type { RoundWalk } from "@/lib/inventory-round";
 
 type Line = {
   id: string;
@@ -19,21 +20,26 @@ export function AuditSession({
   lines: initial,
   people,
   closed,
+  round = null,
 }: {
   sheetId: string;
   lines: Line[];
   people: { id: string; name: string }[];
   closed: boolean;
+  round?: RoundWalk | null;
 }) {
   const router = useRouter();
   const [lines, setLines] = useState(initial);
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState("");
+  const [localClosed, setLocalClosed] = useState(closed);
+  const [walk, setWalk] = useState<RoundWalk | null>(closed ? round : null);
+  const done = closed || localClosed;
 
   const pending = useMemo(() => lines.filter((l) => !l.action).length, [lines]);
 
   async function setAction(line: Line, action: string, extra?: { toUserId?: string; note?: string }) {
-    if (closed) return;
+    if (done) return;
     const toUserId = extra?.toUserId ?? line.toUserId;
     const note = extra?.note ?? line.note;
     if (action === "transfer" && !toUserId) {
@@ -57,17 +63,61 @@ export function AuditSession({
   }
 
   async function finish(questionRest: boolean) {
-    if (closed) return;
+    if (done) return;
     setBusy("finish");
     const res = await fetch(`/api/inventory/audit/${sheetId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ finish: true, questionRest }),
     });
+    const data = await res.json().catch(() => ({}));
     setBusy("");
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
       setMsg(data.error || "Не удалось закрыть");
+      return;
+    }
+    if (!data.round) {
+      router.push("/inventory");
+      router.refresh();
+      return;
+    }
+    setWalk(data.round);
+    setLocalClosed(true);
+    router.refresh();
+  }
+
+  async function goNext() {
+    if (!walk?.next) return;
+    setBusy("next");
+    setMsg("");
+    if (walk.next.auditId) {
+      router.push(`/inventory/audit/${walk.next.auditId}`);
+      router.refresh();
+      return;
+    }
+    const res = await fetch("/api/inventory/audit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: walk.next.userId }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setBusy("");
+    if (!res.ok || !data.id) {
+      setMsg(data.error || "Не удалось открыть следующего");
+      return;
+    }
+    router.push(`/inventory/audit/${data.id}`);
+    router.refresh();
+  }
+
+  async function closeRound() {
+    setBusy("close");
+    setMsg("");
+    const res = await fetch("/api/inventory/rounds/close", { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+    setBusy("");
+    if (!res.ok) {
+      setMsg(data.error || "Не удалось закрыть тур");
       return;
     }
     router.push("/inventory");
@@ -76,8 +126,30 @@ export function AuditSession({
 
   return (
     <div className="space-y-4">
+      {done && walk ? (
+        <Card className="border-gold">
+          <p className="text-sm text-navy">
+            Обход записан в тур <b>{walk.number}</b>. Проверено {walk.checked} из {walk.total}.
+          </p>
+          {!walk.next ? <p className="mt-1 text-sm text-muted">Непроверенных сотрудников не осталось.</p> : null}
+          <div className="mt-3 flex flex-wrap gap-2">
+            {walk.next ? (
+              <Button type="button" disabled={Boolean(busy)} onClick={() => void goNext()}>
+                {busy === "next" ? "Открываем…" : `Далее · ${walk.next.name}`}
+              </Button>
+            ) : (
+              <Button type="button" disabled={Boolean(busy)} onClick={() => void closeRound()}>
+                {busy === "close" ? "Закрываем…" : "Закрыть тур"}
+              </Button>
+            )}
+            <Button type="button" variant="secondary" href="/inventory">
+              К инвентарю
+            </Button>
+          </div>
+        </Card>
+      ) : null}
       <p className="text-sm text-muted">
-        {closed
+        {done
           ? "Обход закрыт."
           : `Отметьте каждую позицию. Не найденные уйдут в блок «На обработке» на странице инвентаря. Осталось ${pending}.`}
       </p>
@@ -96,7 +168,7 @@ export function AuditSession({
             {l.action === "transfer" ? <span className="text-sm font-semibold text-gold">передан</span> : null}
             {l.action === "question" ? <span className="text-sm font-semibold text-bad">под вопросом</span> : null}
           </div>
-          {closed ? null : (
+          {done ? null : (
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <Button type="button" variant={l.action === "found" ? "primary" : "secondary"} disabled={busy === l.id} onClick={() => void setAction(l, "found")}>
                 На месте
@@ -123,22 +195,22 @@ export function AuditSession({
               </Button>
             </div>
           )}
-          {l.action === "question" || (!closed && l.action !== "found" && l.action !== "transfer") ? (
+          {l.action === "question" || (!done && l.action !== "found" && l.action !== "transfer") ? (
             <div className="mt-2">
               <Input
                 placeholder="Комментарий (необязательно)"
                 value={l.note}
-                disabled={closed || busy === l.id}
+                disabled={done || busy === l.id}
                 onChange={(e) => setLines((prev) => prev.map((x) => (x.id === l.id ? { ...x, note: e.target.value } : x)))}
                 onBlur={() => {
-                  if (!closed && l.action === "question") void setAction(l, "question", { note: l.note });
+                  if (!done && l.action === "question") void setAction(l, "question", { note: l.note });
                 }}
               />
             </div>
           ) : null}
         </Card>
       ))}
-      {closed ? null : (
+      {done ? null : (
         <div className="flex flex-wrap gap-2">
           <Button type="button" disabled={Boolean(busy)} onClick={() => void finish(false)}>
             Завершить обход

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { nextNumber } from "@/lib/sequence";
 import { fullName } from "@/lib/names";
 import { audit } from "@/lib/audit";
+import { planAuditStart } from "@/lib/inventory-round-server";
 
 export async function GET() {
   const session = await getSession();
@@ -38,16 +39,14 @@ export async function POST(req: NextRequest) {
   }
   const body = await req.json().catch(() => ({}));
   const userId = String(body.userId || "");
-  const person = await prisma.user.findFirst({
-    where: { id: userId, deletedAt: null },
-    select: { id: true, lastName: true, firstName: true, middleName: true },
-  });
-  if (!person) return NextResponse.json({ error: "Выберите сотрудника" }, { status: 400 });
-  const open = await prisma.inventoryAudit.findFirst({
-    where: { userId, status: "open" },
-    select: { id: true },
-  });
-  if (open) return NextResponse.json({ id: open.id, resumed: true });
+  const plan = await planAuditStart(userId);
+  if (plan.type === "reject") return NextResponse.json({ error: plan.error }, { status: plan.status });
+  if (plan.type === "resume") {
+    if (plan.setRoundId) {
+      await prisma.inventoryAudit.update({ where: { id: plan.auditId }, data: { roundId: plan.setRoundId } });
+    }
+    return NextResponse.json({ id: plan.auditId, resumed: true });
+  }
   const items = await prisma.inventoryItem.findMany({
     where: { deletedAt: null, userId },
     orderBy: [{ invNo: "asc" }, { name: "asc" }],
@@ -58,6 +57,7 @@ export async function POST(req: NextRequest) {
       number,
       userId,
       authorId: session.user.id,
+      roundId: plan.roundId,
       status: "open",
       lines: {
         create: items.map((it, i) => ({
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
     action: "inventory.audit.start",
     entity: "inventory-audit",
     entityId: row.id,
-    details: fullName(person),
+    details: plan.personName || "",
   });
   return NextResponse.json({ id: row.id });
 }

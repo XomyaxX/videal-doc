@@ -4,16 +4,18 @@ import { requireUser, can } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Button, Card, PageHeader, Pill } from "@/components/ui";
 import { InventoryTable } from "./InventoryTable";
+import { RoundBar } from "./RoundBar";
 import { CLEARANCE_STATUS } from "@/lib/clearance";
 import { WRITEOFF_STATUS, reasonLabel } from "@/lib/writeoff";
 import { fullName } from "@/lib/names";
 import { fmtDate } from "@/lib/dates";
+import { loadRoundWalk } from "@/lib/inventory-round-server";
 
 export default async function InventoryPage() {
   const user = await requireUser();
   if (user.roleCode === "remote") redirect("/forbidden");
   const manage = can(user, "inventory.manage");
-  const [sheets, tmcSheets, audits, writeOffs] = await Promise.all([
+  const [sheets, tmcSheets, audits, writeOffs, walk] = await Promise.all([
     prisma.clearanceSheet.findMany({
     where: manage ? {} : { userId: user.id },
     include: { user: { select: { lastName: true, firstName: true, middleName: true } } },
@@ -28,7 +30,10 @@ export default async function InventoryPage() {
     }),
     manage
       ? prisma.inventoryAudit.findMany({
-          include: { user: { select: { lastName: true, firstName: true, middleName: true } } },
+          include: {
+            user: { select: { lastName: true, firstName: true, middleName: true } },
+            round: { select: { number: true } },
+          },
           orderBy: { createdAt: "desc" },
           take: 15,
         })
@@ -40,6 +45,7 @@ export default async function InventoryPage() {
           include: { _count: { select: { lines: true } } },
         })
       : Promise.resolve([]),
+    manage ? loadRoundWalk() : Promise.resolve(null),
   ]);
   return (
     <div>
@@ -66,6 +72,9 @@ export default async function InventoryPage() {
           ) : null
         }
       />
+      {manage ? (
+        <RoundBar round={walk ? { number: walk.number, checked: walk.checked, total: walk.total } : null} />
+      ) : null}
       <InventoryTable />
       {manage ? (
         <Card className="mt-6">
@@ -108,6 +117,7 @@ export default async function InventoryPage() {
               <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
                 <Link href={`/inventory/audit/${s.id}`} className="font-semibold text-navy hover:text-gold">
                   {s.number} · {fullName(s.user)}
+                  {s.round ? ` · ${s.round.number}` : ""}
                 </Link>
                 <span className="flex items-center gap-2 text-sm text-muted">
                   {fmtDate(s.createdAt)}

@@ -156,6 +156,7 @@ model User {
   tmcAuthored       TmcSheet[]       @relation("TmcAuthor")
   inventoryAudits   InventoryAudit[] @relation("AuditSubject")
   inventoryAuditsAuthored InventoryAudit[] @relation("AuditAuthor")
+  inventoryRounds         InventoryRound[] @relation("RoundConductor")
   writeOffSheets          WriteOffSheet[]  @relation("WriteOffAuthor")
   chatIdentity      ChatIdentity?
   chatMembers       ChatMember[]
@@ -382,6 +383,22 @@ model ClearanceSheet {
   @@index([status])
 }
 
+model InventoryRound {
+  id        String           @id @default(cuid())
+  number    String           @unique
+  startedAt DateTime         @default(now())
+  userId    String
+  user      User             @relation("RoundConductor", fields: [userId], references: [id])
+  status    String           @default("open")
+  closedAt  DateTime?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  audits    InventoryAudit[]
+
+  @@index([status])
+  @@index([userId])
+}
+
 model InventoryAudit {
   id        String               @id @default(cuid())
   number    String
@@ -389,6 +406,8 @@ model InventoryAudit {
   user      User                 @relation("AuditSubject", fields: [userId], references: [id])
   authorId  String
   author    User                 @relation("AuditAuthor", fields: [authorId], references: [id])
+  roundId   String?
+  round     InventoryRound?      @relation(fields: [roundId], references: [id], onDelete: SetNull)
   status    String               @default("open")
   note      String               @default("")
   closedAt  DateTime?
@@ -398,6 +417,7 @@ model InventoryAudit {
 
   @@index([userId])
   @@index([status])
+  @@index([roundId])
 }
 
 model InventoryAuditLine {
