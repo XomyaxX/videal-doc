@@ -113,9 +113,36 @@ export async function renderInventoryStatementXlsx(data: InventoryStatement): Pr
     paint(row, SOFT);
   }
   sum.addRow([]);
-  sum.addRow(["Комиссия", "Должность", "Подпись", "ФИО"]);
+  const sumCommHead = sum.addRow(["Роль", "ФИО", "Должность", "Подпись", "Дата"]);
+  paint(sumCommHead, NAVY, { bold: true, color: { argb: "FFFFFFFF" } });
   for (const role of ["Председатель", "Член комиссии", "Член комиссии"]) {
-    sum.addRow([role, "", "", ""]);
+    const row = sum.addRow([role, "", "", "", ""]);
+    paint(row, SOFT);
+  }
+
+  // Блок комиссии внизу листа «Ведомость» (как в PDF: пустые строки под ручное заполнение)
+  ws.addRow([]);
+  const vedCommTitle = ws.addRow(["Комиссия", "", "", "", "", "", ""]);
+  ws.mergeCells(vedCommTitle.number, 1, vedCommTitle.number, 7);
+  paint(vedCommTitle, BAND, { bold: true, color: { argb: "FF1B3A6B" } });
+  const vedCommHead = ws.addRow(["Роль", "ФИО", "Должность", "Подпись", "Дата", "", ""]);
+  paint(vedCommHead, NAVY, { bold: true, color: { argb: "FFFFFFFF" } });
+  for (const role of ["Председатель комиссии", "Член комиссии", "Член комиссии"]) {
+    const row = ws.addRow([role, "", "", "", "", "", ""]);
+    paint(row, SOFT);
+  }
+
+  // Отдельный лист «Комиссия»
+  const comm = wb.addWorksheet("Комиссия", { pageSetup: { paperSize: 9, orientation: "portrait", fitToPage: true, fitToWidth: 1 } });
+  comm.columns = [{ width: 28 }, { width: 36 }, { width: 28 }, { width: 18 }, { width: 16 }];
+  comm.addRow([title, data.number]);
+  comm.addRow(["Организация", data.org]);
+  comm.addRow([]);
+  const commHead = comm.addRow(["Роль", "ФИО", "Должность", "Подпись", "Дата"]);
+  paint(commHead, NAVY, { bold: true, color: { argb: "FFFFFFFF" } });
+  for (const role of ["Председатель комиссии", "Член комиссии", "Член комиссии"]) {
+    const row = comm.addRow([role, "", "", "", ""]);
+    paint(row, SOFT);
   }
 
   const miss = wb.addWorksheet("Не проверены", { pageSetup: { paperSize: 9, orientation: "portrait", fitToPage: true, fitToWidth: 1 } });
