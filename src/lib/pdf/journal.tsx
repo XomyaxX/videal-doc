@@ -36,18 +36,22 @@ export type JournalPdfData = {
   weekLabel: string;
   days: { key: string; label: string }[];
   names: string[];
+  pages?: { weekLabel: string; days: { key: string; label: string }[] }[];
+  scope?: string;
 };
 
 export function JournalDocument({ data }: { data: JournalPdfData }) {
   const dayW = 72;
   const names = [...data.names, ""];
+  const pages = data.pages && data.pages.length ? data.pages : [{ weekLabel: data.weekLabel, days: data.days }];
   return (
     <Document>
-      <Page size="A4" orientation="landscape" style={s.page}>
+      {pages.map((pg) => (
+      <Page key={pg.weekLabel} size="A4" orientation="landscape" style={s.page}>
         <Text style={s.title}>Журнал учета прихода и ухода сотрудников</Text>
-        <Text style={s.org}>Организация / подразделение: ООО «Видиал Медиа»</Text>
+        <Text style={s.org}>Организация / подразделение: ООО «Видеаль Медиа»</Text>
         <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-          <Text style={s.week}>Неделя {data.weekLabel}</Text>
+          <Text style={s.week}>Неделя {pg.weekLabel}{data.scope ? ` · ${data.scope}` : ""}</Text>
           <Text style={{ fontSize: 8 }}>один лист на всю рабочую неделю</Text>
         </View>
         <Text style={s.hint}>
@@ -58,7 +62,7 @@ export function JournalDocument({ data }: { data: JournalPdfData }) {
           <View style={s.tr}>
             <Text style={[s.th, { width: 22, paddingTop: 10 }]}>№</Text>
             <Text style={[s.th, { width: 168, paddingTop: 10 }]}>ФИО</Text>
-            {data.days.map((d) => (
+            {pg.days.map((d) => (
               <View key={d.key} style={{ width: dayW }}>
                 <Text style={s.th}>{d.label}</Text>
                 <View style={s.tr}>
@@ -73,7 +77,7 @@ export function JournalDocument({ data }: { data: JournalPdfData }) {
             <View key={`${name}-${i}`} style={[s.tr, i % 2 === 0 ? s.alt : {}]} wrap={false}>
               <Text style={[s.td, { width: 22, textAlign: "center" }]}>{i + 1}</Text>
               <Text style={[s.td, { width: 168 }]}>{name}</Text>
-              {data.days.map((d) => (
+              {pg.days.map((d) => (
                 <View key={d.key} style={{ flexDirection: "row", width: dayW }}>
                   <Text style={[s.td, { width: dayW / 2, minHeight: 16 }]}> </Text>
                   <Text style={[s.td, { width: dayW / 2, minHeight: 16 }]}> </Text>
@@ -85,9 +89,10 @@ export function JournalDocument({ data }: { data: JournalPdfData }) {
         </View>
         <View style={s.foot}>
           <Text>Ответственный: _______________ / _______________</Text>
-          <Text>Формат A4 · альбом · {data.weekLabel}</Text>
+          <Text>Формат A4 · альбом · {pg.weekLabel}</Text>
         </View>
       </Page>
+      ))}
     </Document>
   );
 }

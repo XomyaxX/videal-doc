@@ -10,6 +10,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: "Нет права" }, { status: 403 });
   }
   const { id } = await params;
+  const existing = await prisma.inventoryItem.findUnique({ where: { id }, select: { status: true, deletedAt: true } });
+  if (!existing || existing.deletedAt) return NextResponse.json({ error: "Нет позиции" }, { status: 404 });
+  if (existing.status === "written_off") {
+    return NextResponse.json({ error: "Позиция списана. Восстановление только вручную." }, { status: 409 });
+  }
   const body = await req.json().catch(() => ({}));
   const name = String(body.name || "").trim();
   if (!name) return NextResponse.json({ error: "Нужно название" }, { status: 400 });
@@ -42,6 +47,11 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     return NextResponse.json({ error: "Нет права" }, { status: 403 });
   }
   const { id } = await params;
+  const existing = await prisma.inventoryItem.findUnique({ where: { id }, select: { status: true, deletedAt: true } });
+  if (!existing || existing.deletedAt) return NextResponse.json({ error: "Нет позиции" }, { status: 404 });
+  if (existing.status === "written_off") {
+    return NextResponse.json({ error: "Позиция списана. Удаление через акт не выполняется." }, { status: 409 });
+  }
   await prisma.inventoryItem.update({ where: { id }, data: { deletedAt: new Date() } });
   await audit({ userId: session.user.id, action: "inventory.delete", entity: "inventory", entityId: id });
   return NextResponse.json({ ok: true });

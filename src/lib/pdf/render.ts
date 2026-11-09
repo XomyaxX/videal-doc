@@ -7,8 +7,10 @@ import { LetterDocument, type LetterPdfData } from "./letter";
 import { ClearanceDocument, type ClearancePdfData } from "./clearance";
 import { DutyDocument, type DutyPdfData } from "./duty";
 import { JournalDocument, type JournalPdfData } from "./journal";
+import { TimesheetDocument, type TimesheetPdfData } from "./timesheet";
 import { TmcDocument, type TmcPdfData } from "./tmc";
 import { AssignmentDocument, type AssignmentPdfData } from "./assignment";
+import { WriteOffDocument, type WriteOffPdfData } from "./writeoff";
 
 export async function renderAdvancePdf(reportId: string): Promise<Buffer> {
   const { data } = await loadAo1Bundle(reportId);
@@ -55,6 +57,18 @@ export async function renderTmcPdf(data: TmcPdfData): Promise<Buffer> {
 
 export async function renderAssignmentPdf(data: AssignmentPdfData): Promise<Buffer> {
   const element = createElement(AssignmentDocument, { data }) as never;
+  const buf = await renderToBuffer(element);
+  return Buffer.from(buf);
+}
+
+export async function renderTimesheetPdf(data: TimesheetPdfData): Promise<Buffer> {
+  const element = createElement(TimesheetDocument, { data }) as never;
+  const buf = await renderToBuffer(element);
+  return Buffer.from(buf);
+}
+
+export async function renderWriteOffPdf(data: WriteOffPdfData): Promise<Buffer> {
+  const element = createElement(WriteOffDocument, { data }) as never;
   const buf = await renderToBuffer(element);
   return Buffer.from(buf);
 }

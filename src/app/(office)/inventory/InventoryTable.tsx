@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Button, Card, Input, Pill } from "@/components/ui";
 import { fullName } from "@/lib/names";
 
@@ -28,6 +29,7 @@ type Row = {
   note: string;
   status: string;
   user: Person | null;
+  writeOff?: { id: string; number: string } | null;
 };
 
 const empty: Omit<Row, "id" | "user"> = {
@@ -126,6 +128,7 @@ export function InventoryTable() {
   const [people, setPeople] = useState<Person[]>([]);
   const [manage, setManage] = useState(false);
   const [q, setQ] = useState("");
+  const [view, setView] = useState<"" | "written_off">("");
   const [sortKey, setSortKey] = useState<SortKey>("invNo");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [edit, setEdit] = useState<(typeof empty & { id?: string }) | null>(null);
@@ -137,8 +140,9 @@ export function InventoryTable() {
     setEdit(row);
   }
 
-  async function load() {
-    const res = await fetch("/api/inventory");
+  async function load(next: "" | "written_off" = view) {
+    const qs = next === "written_off" ? "?status=written_off" : "";
+    const res = await fetch(`/api/inventory${qs}`);
     const data = await res.json();
     setRows(data.rows || []);
     setPeople(data.people || []);
@@ -146,8 +150,10 @@ export function InventoryTable() {
   }
 
   useEffect(() => {
-    void load();
-  }, []);
+    void load(view);
+    // view is the only trigger; load closes over the latest view via the argument
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
 
   useEffect(() => {
     if (!edit) return;
@@ -240,7 +246,19 @@ export function InventoryTable() {
         <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Поиск: фамилия, инв. №, ПК…" />
         {manage ? (
           <>
+            <select
+              className="rounded-xl border border-line bg-white px-3 py-2.5"
+              value={view}
+              aria-label="Фильтр списка"
+              onChange={(e) => setView(e.target.value === "written_off" ? "written_off" : "")}
+            >
+              <option value="">В учёте</option>
+              <option value="written_off">Списанные</option>
+            </select>
             <Button href="/api/inventory/xlsx">Скачать Excel</Button>
+            <Button href="/api/inventory/xlsx?includeWrittenOff=1" variant="secondary">
+              Excel включая списанные
+            </Button>
             <Button variant="secondary" onClick={() => openEdit({ ...empty })}>
               Добавить
             </Button>
@@ -323,7 +341,7 @@ export function InventoryTable() {
                 onChange={(e) => setEdit({ ...edit, qty: Number(e.target.value) || 1 })}
               />
               <select
-                className="rounded-xl border border-line bg-white px-3 py-2.5"
+                className="rounded-xl border border-line bg-card px-3 py-2.5"
                 value={edit.userId || ""}
                 onChange={(e) => setEdit({ ...edit, userId: e.target.value || null })}
               >
@@ -397,7 +415,7 @@ export function InventoryTable() {
               <tr
                 key={r.id}
                 className={`border-t border-line ${
-                  dup ? "bg-[var(--bad-bg)]" : r.status === "question" ? "bg-[#f7efe0]" : ""
+                  dup ? "bg-[var(--bad-bg)]" : r.status === "question" ? "bg-[var(--wait-bg)]" : ""
                 }`}
               >
                 <td className={`px-3 py-2 font-mono ${dup ? "font-semibold text-bad" : ""}`}>{r.invNo || "б/н"}</td>
@@ -406,6 +424,12 @@ export function InventoryTable() {
                     <span className={`font-semibold ${dup ? "text-bad" : "text-navy"}`}>{r.name}</span>
                     {dup ? <Pill tone="bad">задвоено</Pill> : null}
                     {r.status === "question" ? <Pill tone="wait">под вопросом</Pill> : null}
+                    {r.status === "written_off" ? <Pill tone="draft">списано</Pill> : null}
+                    {r.writeOff ? (
+                      <Link href={`/inventory/writeoff/${r.writeOff.id}`} className="text-sm font-semibold text-navy hover:text-gold">
+                        {r.writeOff.number}
+                      </Link>
+                    ) : null}
                   </div>
                   {r.pcCpu ? (
                     <div className="text-xs text-muted">
@@ -420,12 +444,22 @@ export function InventoryTable() {
                 <td className="px-3 py-2 font-mono text-xs">{r.pcHost}</td>
                 {manage ? (
                   <td className="px-3 py-2 whitespace-nowrap">
-                    <Button variant="ghost" onClick={() => openEdit({ ...r })}>
-                      Изменить
-                    </Button>
-                    <Button variant="ghost" onClick={() => void remove(r.id)}>
-                      Убрать
-                    </Button>
+                    {r.status === "written_off" ? (
+                      r.writeOff ? (
+                        <Link href={`/inventory/writeoff/${r.writeOff.id}`} className="text-sm font-semibold text-navy hover:text-gold">
+                          Акт
+                        </Link>
+                      ) : null
+                    ) : (
+                      <>
+                        <Button variant="ghost" onClick={() => openEdit({ ...r })}>
+                          Изменить
+                        </Button>
+                        <Button variant="ghost" onClick={() => void remove(r.id)}>
+                          Убрать
+                        </Button>
+                      </>
+                    )}
                   </td>
                 ) : null}
               </tr>

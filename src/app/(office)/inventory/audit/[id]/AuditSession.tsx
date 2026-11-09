@@ -102,7 +102,7 @@ export function AuditSession({
                 На месте
               </Button>
               <select
-                className="rounded-xl border border-line bg-white px-3 py-2 text-sm"
+                className="rounded-xl border border-line bg-card px-3 py-2 text-sm"
                 value={l.toUserId}
                 disabled={busy === l.id}
                 onChange={(e) => {

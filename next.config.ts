@@ -2,9 +2,20 @@ import type { NextConfig } from "next";
 
 const nextConfig = {
   serverExternalPackages: ["@prisma/client", "@react-pdf/renderer", "jimp", "exceljs", "nodemailer", "web-push"],
+  outputFileTracingExcludes: {
+    "*": [
+      "./data/**",
+      "./data/files/**",
+      "/srv/samba/**",
+      "/srv/samba/share/**",
+      "./.wave-a/**",
+      "./.next.bak/**",
+      "./.next.prev/**",
+    ],
+  },
   experimental: {
-    proxyClientMaxBodySize: "1024mb",
-    serverActions: { bodySizeLimit: "1024mb" },
+    proxyClientMaxBodySize: "5gb",
+    serverActions: { bodySizeLimit: "5gb" },
   },
   async headers() {
     return [
@@ -16,6 +27,7 @@ const nextConfig = {
         ],
       },
       {
+        // Общие заголовки без CSP — для всех путей, включая /api/chat/blobs/*.
         source: "/:path*",
         headers: [
           { key: "X-Frame-Options", value: "SAMEORIGIN" },
@@ -23,6 +35,13 @@ const nextConfig = {
           { key: "Referrer-Policy", value: "same-origin" },
           { key: "Strict-Transport-Security", value: "max-age=15552000; includeSubDomains" },
           { key: "Permissions-Policy", value: "camera=(self), microphone=(self), display-capture=(self), geolocation=()" },
+        ],
+      },
+      {
+        // P0 XSS hotfix: глобальный CSP из headers() перетирает CSP роута, поэтому
+        // /api/chat/blobs/* исключён — CSP (sandbox) ставит сам роут.
+        source: "/:path((?!api/chat/blobs/).*)",
+        headers: [
           {
             key: "Content-Security-Policy",
             value: [

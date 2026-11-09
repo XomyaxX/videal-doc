@@ -5,6 +5,7 @@ export const PERMISSIONS = [
   { code: "docs.manage", name: "Управлять документами" },
   { code: "users.view", name: "Смотреть сотрудников" },
   { code: "users.manage", name: "Управлять сотрудниками" },
+  { code: "users.suspend", name: "Отстранять сотрудников" },
   { code: "roles.manage", name: "Роли и уровни доступа" },
   { code: "org.edit", name: "Реквизиты организации" },
   { code: "scan.use", name: "Окно SCAN" },
@@ -29,6 +30,8 @@ export const PERMISSIONS = [
   { code: "inventory.manage", name: "Инвентарь (правка АХО)" },
   { code: "data.view", name: "Раздел Data" },
   { code: "data.work", name: "Писать в папку Data" },
+  { code: "calendar.holidays", name: "Праздники и производственный календарь" },
+  { code: "support.manage", name: "Очередь IT-заявок" },
 ] as const;
 
 export type PermissionCode = (typeof PERMISSIONS)[number]["code"];
@@ -44,6 +47,7 @@ export const ROLE_PRESETS: Record<string, PermissionCode[]> = {
     "docs.manage",
     "users.view",
     "users.manage",
+    "users.suspend",
     "roles.manage",
     "org.edit",
     "scan.use",
@@ -68,6 +72,8 @@ export const ROLE_PRESETS: Record<string, PermissionCode[]> = {
     "inventory.manage",
     "data.view",
     "data.work",
+    "calendar.holidays",
+    "support.manage",
   ],
   aho: [
     "docs.view_own",
@@ -101,6 +107,7 @@ export const ROLE_PRESETS: Record<string, PermissionCode[]> = {
     "docs.view_own",
     "docs.send",
     "users.view",
+    "users.suspend",
     "scan.use",
     "finance.create",
     "finance.approve",
@@ -168,4 +175,22 @@ export function parsePermissions(raw: string): string[] {
 export function hasPermission(raw: string, code: PermissionCode): boolean {
   const list = parsePermissions(raw);
   return list.includes("superadmin") || list.includes(code);
+}
+
+/** Permissions kept during a read-only suspension (view only). */
+export const READ_ONLY_PERMS: PermissionCode[] = [
+  "docs.view_own",
+  "docs.view_all",
+  "users.view",
+  "finance.view_all",
+  "prod.view",
+  "archive.view",
+  "archive.view_all",
+  "data.view",
+];
+
+export function readOnlyPermissions(list: string[]): string[] {
+  const allow = new Set<string>(READ_ONLY_PERMS);
+  if (list.includes("superadmin")) return [...READ_ONLY_PERMS];
+  return list.filter((p) => allow.has(p));
 }
