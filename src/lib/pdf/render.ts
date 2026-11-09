@@ -11,6 +11,8 @@ import { TimesheetDocument, type TimesheetPdfData } from "./timesheet";
 import { TmcDocument, type TmcPdfData } from "./tmc";
 import { AssignmentDocument, type AssignmentPdfData } from "./assignment";
 import { WriteOffDocument, type WriteOffPdfData } from "./writeoff";
+import { InventoryStatementDocument } from "./inventory-statement";
+import type { InventoryStatement } from "@/lib/inventory-statement";
 
 export async function renderAdvancePdf(reportId: string): Promise<Buffer> {
   const { data } = await loadAo1Bundle(reportId);
@@ -69,6 +71,12 @@ export async function renderTimesheetPdf(data: TimesheetPdfData): Promise<Buffer
 
 export async function renderWriteOffPdf(data: WriteOffPdfData): Promise<Buffer> {
   const element = createElement(WriteOffDocument, { data }) as never;
+  const buf = await renderToBuffer(element);
+  return Buffer.from(buf);
+}
+
+export async function renderInventoryStatementPdf(data: InventoryStatement): Promise<Buffer> {
+  const element = createElement(InventoryStatementDocument, { data }) as never;
   const buf = await renderToBuffer(element);
   return Buffer.from(buf);
 }

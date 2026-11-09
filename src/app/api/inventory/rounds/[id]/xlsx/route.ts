@@ -1,0 +1,30 @@
+import { NextResponse } from "next/server";
+import { getSession } from "@/lib/auth";
+import { userCan } from "@/lib/types";
+import { audit } from "@/lib/audit";
+import { loadRoundStatement } from "@/lib/inventory-statement-server";
+import { renderInventoryStatementXlsx } from "@/lib/inventory-statement-xlsx";
+
+export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const session = await getSession();
+  if (!session) return new NextResponse("Нужно войти", { status: 401 });
+  if (!userCan(session.user, "inventory.manage")) return new NextResponse("Нет права", { status: 403 });
+  const { id } = await ctx.params;
+  const data = await loadRoundStatement(id);
+  if (!data) return new NextResponse("Нет тура", { status: 404 });
+  const buf = await renderInventoryStatementXlsx(data);
+  await audit({
+    userId: session.user.id,
+    action: "inventory.round.xlsx",
+    entity: "inventory-round",
+    entityId: id,
+    details: data.interim ? `${data.number} промежуточная` : data.number,
+  });
+  const filename = `${data.number}${data.interim ? "-preview" : ""}.xlsx`;
+  return new NextResponse(new Uint8Array(buf), {
+    headers: {
+      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+    },
+  });
+}

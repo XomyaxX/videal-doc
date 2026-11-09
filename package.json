@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "check:inventory-round": "tsx scripts/check-inventory-round.ts",
+    "check:inventory-statement": "tsx scripts/check-inventory-statement.mts",
     "setup": "prisma generate && prisma db push && tsx prisma/seed.ts",
     "seed:staff": "tsx prisma/seed-staff.ts",
     "seed:demo": "tsx prisma/seed-demo.ts",
