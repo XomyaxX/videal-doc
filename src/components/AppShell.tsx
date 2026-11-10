@@ -26,6 +26,7 @@ import {
   Users,
   UserRound,
   Video,
+  Waypoints,
   X,
 } from "lucide-react";
 import { AccountSwitcher } from "./AccountSwitcher";
@@ -50,6 +51,7 @@ const NAV = [
   { href: "/data", label: "Data", icon: Database, perm: "data.view" as const, section: "work" },
   { href: "/learn", label: "Обучение", icon: GraduationCap, perm: null, section: "work" },
   { href: "/calendar", label: "Календарь", icon: CalendarDays, perm: null, section: "work" },
+  { href: "/board", label: "Доска задач", icon: Waypoints, perm: null, section: "work" },
   { href: "/meet", label: "Совещания", icon: Video, perm: null, section: "work" },
   { href: "/documents", label: "Документы", icon: FileText, perm: null, section: "papers" },
   { href: "/registry", label: "Журнал", icon: Inbox, perm: null, section: "papers" },
@@ -126,6 +128,7 @@ export function AppShell({
   chatUnread = 0,
   orgShort = "ООО «Видеаль Медиа»",
   prodTaskCount = 0,
+  showWorkBoard = false,
   children,
 }: {
   user: SessionUser;
@@ -133,12 +136,15 @@ export function AppShell({
   chatUnread?: number;
   orgShort?: string;
   prodTaskCount?: number;
+  showWorkBoard?: boolean;
   children: React.ReactNode;
 }) {
   const path = usePathname();
   const isChat = path.startsWith("/chat");
+  const isBoard = path === "/board" || path.startsWith("/board/");
   const slim = slimEmployeeNav(user);
   const items = NAV.filter((i) => {
+    if (i.href === "/board" && !showWorkBoard) return false;
     if (user.roleCode === "remote" && (i.href === "/inventory" || i.href === "/duty" || i.href === "/library")) return false;
     return !i.perm || userCan(user, i.perm);
   });
@@ -296,7 +302,9 @@ export function AppShell({
           className={
             isChat
               ? "flex min-h-0 w-full flex-1 flex-col p-0 pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0"
-              : "mx-auto w-full max-w-6xl flex-1 px-4 py-5 pb-24 md:px-6 md:py-8 md:pb-8"
+              : isBoard
+                ? "flex h-[calc(100dvh-3.5rem-4.25rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] w-full min-w-0 flex-1 flex-col overflow-hidden p-0 md:h-dvh"
+                : "mx-auto w-full max-w-6xl flex-1 px-4 py-5 pb-24 md:px-6 md:py-8 md:pb-8"
           }
         >
           {children}

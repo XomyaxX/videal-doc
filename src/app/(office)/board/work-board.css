@@ -1,0 +1,472 @@
+.wb-page {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  background: #14110d;
+  color: #f6f1e6;
+}
+
+.wb-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px 10px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(245, 197, 66, 0.16), transparent 42%),
+    #1b1712;
+  border-bottom: 1px solid rgba(245, 197, 66, 0.18);
+}
+
+.wb-kicker {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #e7c56a;
+}
+
+.wb-bar h1 {
+  margin: 2px 0 0;
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: 28px;
+  line-height: 1;
+  font-weight: 650;
+}
+
+.wb-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.wb-switch,
+.wb-select,
+.wb-add {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #2a241c;
+  color: #f6f1e6;
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 14px;
+}
+
+.wb-switch {
+  display: flex;
+  padding: 3px;
+  gap: 2px;
+}
+
+.wb-switch button {
+  border: 0;
+  background: transparent;
+  color: rgba(246, 241, 230, 0.72);
+  border-radius: 999px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+.wb-switch button[aria-pressed="true"] {
+  background: #f5c542;
+  color: #1c1506;
+  font-weight: 700;
+}
+
+.wb-add {
+  background: #f5c542;
+  color: #1c1506;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+
+.wb-add:hover {
+  transform: translateY(-1px);
+  background: #ffd56a;
+}
+
+.wb-add:disabled {
+  opacity: 0.6;
+  cursor: progress;
+  transform: none;
+}
+
+.wb-hint,
+.wb-notice {
+  margin: 0;
+  padding: 0 18px 8px;
+  font-size: 13px;
+  color: rgba(246, 241, 230, 0.72);
+}
+
+.wb-notice {
+  color: #ffd56a;
+  animation: wb-in 0.25s ease;
+}
+
+.wb-stage {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+}
+
+.wb-flow {
+  height: 100%;
+  background-color: #12100e;
+  background-image:
+    linear-gradient(rgba(245, 197, 66, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(245, 197, 66, 0.07) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+.wb-flow .react-flow__attribution {
+  background: transparent;
+  color: rgba(246, 241, 230, 0.35);
+}
+
+.wb-flow .react-flow__controls-button {
+  background: #2a241c;
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+  fill: #f6f1e6;
+}
+
+.wb-card {
+  width: 300px;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
+  animation: wb-in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.wb-card.is-selected {
+  box-shadow:
+    0 0 0 2px #fff6d4,
+    0 16px 36px rgba(0, 0, 0, 0.35);
+}
+
+.wb-card.is-overdue,
+.wb-mini.is-overdue {
+  box-shadow: 0 0 0 2px #ff8b7a, 0 16px 36px rgba(0, 0, 0, 0.35);
+}
+
+.wb-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #f5c542;
+  color: #1c1506;
+  padding: 8px 8px 8px 10px;
+  cursor: grab;
+}
+
+.wb-title input,
+.wb-body textarea,
+.wb-body select {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  outline: none;
+}
+
+.wb-title input {
+  font-weight: 750;
+  font-size: 15px;
+}
+
+.wb-x {
+  border: 0;
+  background: transparent;
+  color: #1c1506;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 2px 4px;
+}
+
+.wb-x:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.wb-body {
+  background: #b7e4c7;
+  color: #143024;
+  padding: 8px 10px 10px;
+}
+
+.wb-body textarea {
+  resize: none;
+  min-height: 64px;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.wb-statuses {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.wb-statuses button {
+  flex: 1;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(20, 48, 36, 0.08);
+  color: #143024;
+  font-size: 12px;
+  white-space: nowrap;
+  padding: 5px 4px;
+  cursor: pointer;
+  transition: background 0.18s ease, transform 0.18s ease;
+}
+
+.wb-statuses button[aria-pressed="true"] {
+  background: #143024;
+  color: #e7f8ee;
+  font-weight: 700;
+}
+
+.wb-body select {
+  margin-top: 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.45);
+  padding: 4px 6px;
+  font-size: 13px;
+}
+
+.wb-meta,
+.wb-prod {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.wb-meta input,
+.wb-prod input {
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.55);
+  padding: 3px 6px;
+  color: inherit;
+}
+
+.wb-overdue {
+  margin: 4px 0 0;
+  color: #8a1f12;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.wb-prod {
+  position: relative;
+}
+
+.wb-prod button,
+.wb-prod li button {
+  border: 0;
+  border-radius: 8px;
+  background: rgba(20, 48, 36, 0.1);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.wb-prod ul {
+  position: absolute;
+  z-index: 5;
+  left: 0;
+  right: 0;
+  top: 100%;
+  margin: 4px 0 0;
+  padding: 4px;
+  list-style: none;
+  background: #e7f6ec;
+  border-radius: 10px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+}
+
+.wb-prod li button {
+  width: 100%;
+  padding: 4px 6px;
+}
+
+.wb-area {
+  width: 100%;
+  height: 100%;
+  border-radius: 22px;
+  border: 1px dashed rgba(245, 197, 66, 0.7);
+  background: rgba(245, 197, 66, 0.06);
+}
+
+.wb-area-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 12px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #f5c542;
+  color: #1c1506;
+  font-weight: 750;
+}
+
+.wb-area-label span {
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+.wb-depts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 18px 8px;
+}
+
+.wb-depts button {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  border: 1px solid rgba(245, 197, 66, 0.35);
+  background: transparent;
+  color: #f6f1e6;
+  border-radius: 999px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.wb-depts button[aria-pressed="true"] {
+  background: #f5c542;
+  color: #1c1506;
+  font-weight: 750;
+}
+
+.wb-crumb {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 6px 0 0;
+  font-size: 13px;
+}
+
+.wb-crumb button {
+  border: 0;
+  background: transparent;
+  color: #f5c542;
+  cursor: pointer;
+  padding: 0;
+  font-weight: 700;
+}
+
+.wb-handle {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #1c1506;
+  background: #fff6d4;
+}
+
+.wb-columns {
+  display: flex;
+  gap: 12px;
+  height: 100%;
+  overflow: auto;
+  padding: 8px 16px 16px;
+}
+
+.wb-column {
+  display: flex;
+  width: 270px;
+  min-width: 270px;
+  flex-direction: column;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: border-color 0.18s ease, background 0.18s ease;
+}
+
+.wb-column.is-over {
+  border-color: #f5c542;
+  background: rgba(245, 197, 66, 0.08);
+}
+
+.wb-column header {
+  padding: 12px 12px 8px;
+}
+
+.wb-column header strong {
+  display: block;
+}
+
+.wb-column header span,
+.wb-step {
+  color: rgba(246, 241, 230, 0.55);
+  font-size: 12px;
+}
+
+.wb-column-body {
+  display: flex;
+  min-height: 120px;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 10px 12px;
+}
+
+.wb-mini {
+  border-radius: 14px;
+  overflow: hidden;
+  cursor: grab;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25);
+  animation: wb-in 0.28s ease;
+}
+
+.wb-mini header {
+  background: #f5c542;
+  color: #1c1506;
+  padding: 8px 10px;
+  font-weight: 750;
+}
+
+.wb-mini div {
+  background: #b7e4c7;
+  color: #143024;
+  padding: 8px 10px 10px;
+  font-size: 13px;
+}
+
+.wb-empty {
+  margin: auto;
+  color: rgba(246, 241, 230, 0.45);
+  font-size: 13px;
+  text-align: center;
+  padding: 12px;
+}
+
+@keyframes wb-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wb-card,
+  .wb-mini,
+  .wb-notice,
+  .wb-add,
+  .wb-flow .react-flow__edge-path {
+    animation: none;
+    transition: none;
+  }
+}

@@ -52,6 +52,7 @@ model Department {
   deletedAt  DateTime?
   users      User[]
   extraUsers UserDepartmentAccess[]
+  workBoardTasks WorkBoardTask[]
   createdAt  DateTime                @default(now())
   updatedAt  DateTime                @updatedAt
 }
@@ -177,6 +178,10 @@ model User {
   pipeProjectsAuthored PipeProject[]       @relation("PipeProjectAuthor")
   pipeGroupMembers     PipeGroupMember[]
   pipeGridSeats        PipeProjectWorker[]
+  workBoardAssigned    WorkBoardTask[]     @relation("WorkBoardAssignee")
+  workBoardAuthored    WorkBoardTask[]     @relation("WorkBoardAuthor")
+  workBoardStaff       WorkBoardTask[]     @relation("WorkBoardStaff")
+  workBoardEdges       WorkBoardEdge[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1167,6 +1172,7 @@ model Task {
   skills         TaskSkill[]
   crew           TaskCrew[]
   peerLinks      ChatTask[]
+  workBoardLinks WorkBoardTask[]
   pipeProjectId  String?
   pipeProject    PipeProject? @relation(fields: [pipeProjectId], references: [id], onDelete: Cascade)
   pipeChapterId  String?
@@ -1743,4 +1749,52 @@ model ChatLinkOffer {
   createdAt  DateTime @default(now())
 
   @@index([userId, expiresAt])
+}
+
+// Доска рабочих задач (закрытый тест). Отдельные таблицы: производственные Task не меняются.
+model WorkBoardTask {
+  id         String    @id @default(cuid())
+  title      String
+  body       String    @default("")
+  status     String    @default("todo")
+  assigneeId String?
+  assignee   User?     @relation("WorkBoardAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  authorId   String?
+  author     User?     @relation("WorkBoardAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  staffUserId String?  @unique
+  staffUser   User?    @relation("WorkBoardStaff", fields: [staffUserId], references: [id], onDelete: SetNull)
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  dueOn        String  @default("")
+  prodTaskId   String?
+  prodTask     Task?   @relation(fields: [prodTaskId], references: [id], onDelete: SetNull)
+  posX       Float     @default(80)
+  posY       Float     @default(80)
+  sortOrder  Int       @default(0)
+  version    Int       @default(1)
+  deletedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  edgesOut   WorkBoardEdge[] @relation("WorkBoardEdgeFrom")
+  edgesIn    WorkBoardEdge[] @relation("WorkBoardEdgeTo")
+
+  @@index([assigneeId, status])
+  @@index([deletedAt, sortOrder])
+  @@index([departmentId])
+  @@index([prodTaskId])
+}
+
+model WorkBoardEdge {
+  id        String        @id @default(cuid())
+  fromId    String
+  toId      String
+  kind      String        @default("depends")
+  from      WorkBoardTask @relation("WorkBoardEdgeFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  to        WorkBoardTask @relation("WorkBoardEdgeTo", fields: [toId], references: [id], onDelete: Cascade)
+  authorId  String?
+  author    User?         @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  createdAt DateTime      @default(now())
+
+  @@unique([fromId, toId])
+  @@index([toId])
 }
