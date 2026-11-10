@@ -11,6 +11,7 @@ import {
   staffCardBody,
   staffCardTitle,
   stableTopo,
+  studioToday,
 } from "./work-board-graph";
 
 describe("связи доски", () => {
@@ -126,6 +127,12 @@ describe("карточки сотрудников и срок", () => {
     assert.equal(isOverdue("2026-11-10", "wip", "2026-11-10"), false);
     assert.equal(isOverdue("2026-11-09", "done", "2026-11-10"), false);
     assert.equal(isOverdue("", "todo", "2026-11-10"), false);
+  });
+
+  it("берёт «сегодня» по времени сервера (Омск, +6), а не по Москве", () => {
+    // 09.11 20:30 UTC = 10.11 02:30 в Омске, но ещё 09.11 23:30 в Москве.
+    assert.equal(studioToday(new Date("2026-11-09T20:30:00Z")), "2026-11-10");
+    assert.equal(studioToday(new Date("2026-11-09T17:59:00Z")), "2026-11-09");
   });
 
   it("раскладывает отделы рядом, а людей внутри отдела сеткой", () => {

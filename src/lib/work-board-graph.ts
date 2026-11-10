@@ -1,3 +1,5 @@
+import { OFFICE_TZ } from "./dates";
+
 export const BOARD_STATUSES = [
   { id: "todo", label: "К выполнению" },
   { id: "wip", label: "В работе" },
@@ -137,10 +139,10 @@ export function assignSortOrders(ids: string[]) {
 export const BOARD_CARD_W = 300;
 export const BOARD_CARD_H = 360;
 
-/** Сегодня по календарю студии, формат ГГГГ-ММ-ДД. */
+/** Сегодня по календарю студии (часовой пояс сервера 51, OFFICE_TZ), формат ГГГГ-ММ-ДД. */
 export function studioToday(now = new Date()) {
   return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Moscow",
+    timeZone: OFFICE_TZ,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
