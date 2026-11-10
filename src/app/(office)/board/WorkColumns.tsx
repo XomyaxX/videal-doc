@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { BOARD_STATUSES, type BoardStatus } from "@/lib/work-board-graph";
+import { BOARD_STATUSES, isOverdue, studioToday, type BoardStatus } from "@/lib/work-board-graph";
 import type { BoardEdge, BoardPerson, BoardTask } from "./types";
 
 export function WorkColumns({
@@ -68,7 +68,7 @@ export function WorkColumns({
             {cardsIn(column.id).map((task) => (
               <article
                 key={task.id}
-                className="wb-mini"
+                className={isOverdue(task.dueOn, task.status, studioToday()) ? "wb-mini is-overdue" : "wb-mini"}
                 draggable={!column.locked}
                 onDragStart={() => {
                   dragId.current = task.id;
@@ -79,8 +79,9 @@ export function WorkColumns({
                   {task.title}
                 </header>
                 <div>
-                  <p>{task.body || "Без описания"}</p>
+                  <p>{task.body || "Обязанности не заполнены"}</p>
                   <p>{mode === "status" ? task.assigneeName || "Не назначен" : statusLabel(task.status)}</p>
+                  <p>{task.dueOn ? `Срок ${task.dueOn.split("-").reverse().join(".")}` : "Без срока"}{isOverdue(task.dueOn, task.status, studioToday()) ? " · просрочено" : ""}</p>
                   <p>{linkHint(task.id, tasks, edges)}</p>
                 </div>
               </article>

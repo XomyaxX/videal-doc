@@ -148,6 +148,11 @@
     0 16px 36px rgba(0, 0, 0, 0.35);
 }
 
+.wb-card.is-overdue,
+.wb-mini.is-overdue {
+  box-shadow: 0 0 0 2px #ff8b7a, 0 16px 36px rgba(0, 0, 0, 0.35);
+}
+
 .wb-title {
   display: flex;
   align-items: center;
@@ -232,6 +237,132 @@
   background: rgba(255, 255, 255, 0.45);
   padding: 4px 6px;
   font-size: 13px;
+}
+
+.wb-meta,
+.wb-prod {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.wb-meta input,
+.wb-prod input {
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.55);
+  padding: 3px 6px;
+  color: inherit;
+}
+
+.wb-overdue {
+  margin: 4px 0 0;
+  color: #8a1f12;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.wb-prod {
+  position: relative;
+}
+
+.wb-prod button,
+.wb-prod li button {
+  border: 0;
+  border-radius: 8px;
+  background: rgba(20, 48, 36, 0.1);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.wb-prod ul {
+  position: absolute;
+  z-index: 5;
+  left: 0;
+  right: 0;
+  top: 100%;
+  margin: 4px 0 0;
+  padding: 4px;
+  list-style: none;
+  background: #e7f6ec;
+  border-radius: 10px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+}
+
+.wb-prod li button {
+  width: 100%;
+  padding: 4px 6px;
+}
+
+.wb-area {
+  width: 100%;
+  height: 100%;
+  border-radius: 22px;
+  border: 1px dashed rgba(245, 197, 66, 0.7);
+  background: rgba(245, 197, 66, 0.06);
+}
+
+.wb-area-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 12px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #f5c542;
+  color: #1c1506;
+  font-weight: 750;
+}
+
+.wb-area-label span {
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+.wb-depts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 18px 8px;
+}
+
+.wb-depts button {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  border: 1px solid rgba(245, 197, 66, 0.35);
+  background: transparent;
+  color: #f6f1e6;
+  border-radius: 999px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.wb-depts button[aria-pressed="true"] {
+  background: #f5c542;
+  color: #1c1506;
+  font-weight: 750;
+}
+
+.wb-crumb {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 6px 0 0;
+  font-size: 13px;
+}
+
+.wb-crumb button {
+  border: 0;
+  background: transparent;
+  color: #f5c542;
+  cursor: pointer;
+  padding: 0;
+  font-weight: 700;
 }
 
 .wb-handle {

@@ -133,3 +133,75 @@ export function assignSortOrders(ids: string[]) {
   ids.forEach((id, index) => orders.set(id, (index + 1) * 10));
   return orders;
 }
+
+export const BOARD_CARD_W = 300;
+export const BOARD_CARD_H = 360;
+
+/** Сегодня по календарю студии, формат ГГГГ-ММ-ДД. */
+export function studioToday(now = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Moscow",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+}
+
+/** Просрочка — срок раньше сегодняшнего дня. «Готово» просрочкой не считается. */
+export function isOverdue(dueOn: string, status: string, today = studioToday()) {
+  if (!dueOn || status === "done") return false;
+  return dueOn < today;
+}
+
+export function staffCardTitle(departmentName: string | null, firstName: string, lastName: string) {
+  const who = firstName.trim() || lastName.trim() || "Сотрудник";
+  const dept = departmentName?.trim() || "Без отдела";
+  return `${dept} — ${who}`.slice(0, 200);
+}
+
+/** Только факты из базы. Пустая должность не подменяется выдуманным текстом. */
+export function staffCardBody(input: { position: string | null; accessNames: string[]; extraDepartments: string[] }) {
+  const lines: string[] = [];
+  const position = input.position?.trim() ?? "";
+  if (position) lines.push(`Должность: ${position}`);
+  const access = input.accessNames.map((name) => name.trim()).filter(Boolean);
+  if (access.length) lines.push(`Доступ: ${access.join("; ")}`);
+  const extra = input.extraDepartments.map((name) => name.trim()).filter(Boolean);
+  if (extra.length) lines.push(`Ещё отделы: ${extra.join(", ")}`);
+  return lines.join("\n");
+}
+
+export function placeStaffCards(groupSizes: number[]) {
+  const colW = BOARD_CARD_W + 40;
+  const rowH = BOARD_CARD_H + 28;
+  const cols = 2;
+  const slots: { x: number; y: number }[][] = [];
+  let originX = 48;
+  for (const size of groupSizes) {
+    const group: { x: number; y: number }[] = [];
+    for (let index = 0; index < size; index += 1) {
+      const col = index % cols;
+      const row = Math.floor(index / cols);
+      group.push({ x: originX + col * colW, y: 88 + row * rowH });
+    }
+    slots.push(group);
+    const width = Math.max(1, Math.min(cols, size)) * colW;
+    originX += width + 96;
+  }
+  return slots;
+}
+
+export function areaFrame(cards: { posX: number; posY: number }[]) {
+  const minX = Math.min(...cards.map((card) => card.posX));
+  const minY = Math.min(...cards.map((card) => card.posY));
+  const maxX = Math.max(...cards.map((card) => card.posX));
+  const maxY = Math.max(...cards.map((card) => card.posY));
+  const pad = 22;
+  const head = 52;
+  return {
+    x: minX - pad,
+    y: minY - head,
+    width: maxX + BOARD_CARD_W + pad - (minX - pad),
+    height: maxY + BOARD_CARD_H + pad - (minY - head),
+  };
+}

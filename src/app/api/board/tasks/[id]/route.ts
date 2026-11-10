@@ -9,6 +9,9 @@ const schema = z
     body: z.string().max(4000).optional(),
     status: z.enum(["todo", "wip", "done"]).optional(),
     assigneeId: z.string().min(1).nullable().optional(),
+    departmentId: z.string().min(1).nullable().optional(),
+    dueOn: z.string().max(10).optional(),
+    prodTaskId: z.string().min(1).nullable().optional(),
     posX: z.number().finite().optional(),
     posY: z.number().finite().optional(),
   })
@@ -18,6 +21,9 @@ const schema = z
       value.body !== undefined ||
       value.status !== undefined ||
       value.assigneeId !== undefined ||
+      value.departmentId !== undefined ||
+      value.dueOn !== undefined ||
+      value.prodTaskId !== undefined ||
       value.posX !== undefined ||
       value.posY !== undefined,
     { message: "empty" },

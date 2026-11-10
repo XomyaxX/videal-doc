@@ -4,6 +4,7 @@ import { audit, auditRequestIp } from "./audit";
 import { getSession } from "./auth";
 import { fullName } from "./names";
 import { prisma } from "./prisma";
+import { taskTitle } from "./prod-server";
 import {
   assignSortOrders,
   edgeWouldCycle,
@@ -24,6 +25,11 @@ export type BoardTaskDto = {
   status: BoardStatus;
   assigneeId: string | null;
   assigneeName: string;
+  departmentId: string | null;
+  departmentName: string;
+  dueOn: string;
+  prodTaskId: string | null;
+  prodTaskTitle: string;
   posX: number;
   posY: number;
   sortOrder: number;
@@ -85,6 +91,17 @@ export function boardErrorResponse(error: unknown) {
 
 const taskInclude = {
   assignee: { select: { lastName: true, firstName: true, middleName: true } },
+  department: { select: { name: true } },
+  prodTask: {
+    select: {
+      title: true,
+      stage: true,
+      shot: { select: { code: true } },
+      scene: { select: { code: true, title: true } },
+      asset: { select: { name: true } },
+      episode: { select: { code: true } },
+    },
+  },
 } satisfies Prisma.WorkBoardTaskInclude;
 
 export async function loadSnapshot(): Promise<BoardSnapshot> {
@@ -109,6 +126,11 @@ export async function loadSnapshot(): Promise<BoardSnapshot> {
       status: isBoardStatus(task.status) ? task.status : "todo",
       assigneeId: task.assigneeId,
       assigneeName: task.assignee ? fullName(task.assignee) : "",
+      departmentId: task.departmentId,
+      departmentName: task.department?.name ?? "",
+      dueOn: task.dueOn,
+      prodTaskId: task.prodTaskId,
+      prodTaskTitle: task.prodTask ? taskTitle(task.prodTask) : "",
       posX: task.posX,
       posY: task.posY,
       sortOrder: task.sortOrder,
@@ -146,26 +168,57 @@ function clampPos(value: number) {
   return Math.max(-20000, Math.min(20000, value));
 }
 
+async function assertDepartment(departmentId: string | null | undefined) {
+  if (!departmentId) return null;
+  const row = await prisma.department.findFirst({ where: { id: departmentId, deletedAt: null }, select: { id: true } });
+  if (!row) throw new BoardError(400, "Отдел не найден");
+  return row.id;
+}
+
+async function assertProdTask(prodTaskId: string | null | undefined) {
+  if (!prodTaskId) return null;
+  const row = await prisma.task.findFirst({ where: { id: prodTaskId, deletedAt: null }, select: { id: true } });
+  if (!row) throw new BoardError(400, "Производственная задача не найдена");
+  return row.id;
+}
+
+function dueOrEmpty(value: string) {
+  const due = value.trim();
+  if (!due) return "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) throw new BoardError(400, "Укажите срок датой");
+  return due;
+}
+
 export async function createTask(
   userId: string,
-  input: { title: string; body?: string },
+  input: { title: string; body?: string; departmentId?: string | null },
   ip: string,
 ) {
   const title = input.title.trim();
   if (!title) throw new BoardError(400, "Укажите название");
-  const count = await prisma.workBoardTask.count({ where: { deletedAt: null } });
+  const departmentId = await assertDepartment(input.departmentId);
+  const where = { deletedAt: null, ...(departmentId ? { departmentId } : {}) };
+  const count = await prisma.workBoardTask.count({ where });
   const maxSort = await prisma.workBoardTask.aggregate({
     where: { deletedAt: null },
     _max: { sortOrder: true },
   });
+  const anchor = departmentId
+    ? await prisma.workBoardTask.findFirst({
+        where: { deletedAt: null, departmentId },
+        orderBy: { posX: "desc" },
+        select: { posX: true, posY: true },
+      })
+    : null;
   const task = await prisma.workBoardTask.create({
     data: {
       title: title.slice(0, 200),
       body: (input.body ?? "").slice(0, 4000),
       authorId: userId,
+      departmentId,
       sortOrder: (maxSort._max.sortOrder ?? 0) + 10,
-      posX: 48 + (count % 4) * 380,
-      posY: 64 + Math.floor(count / 4) * 240,
+      posX: anchor ? anchor.posX + 40 : 48 + (count % 3) * 360,
+      posY: anchor ? anchor.posY + 80 : 88 + Math.floor(count / 3) * 200,
     },
   });
   await audit({
@@ -188,6 +241,9 @@ export async function updateTask(
     body?: string;
     status?: BoardStatus;
     assigneeId?: string | null;
+    departmentId?: string | null;
+    dueOn?: string;
+    prodTaskId?: string | null;
     posX?: number;
     posY?: number;
   },
@@ -218,6 +274,9 @@ export async function updateTask(
       data.assigneeId = patch.assigneeId;
     }
   }
+  if (patch.departmentId !== undefined) data.departmentId = await assertDepartment(patch.departmentId);
+  if (patch.dueOn !== undefined) data.dueOn = dueOrEmpty(patch.dueOn);
+  if (patch.prodTaskId !== undefined) data.prodTaskId = await assertProdTask(patch.prodTaskId);
   if (patch.posX !== undefined) data.posX = clampPos(patch.posX);
   if (patch.posY !== undefined) data.posY = clampPos(patch.posY);
 
@@ -323,4 +382,35 @@ export async function deleteEdge(userId: string, id: string, ip: string) {
     ip,
   });
   return loadSnapshot();
+}
+
+export async function searchProdTasks(query: string) {
+  const q = query.trim();
+  const rows = await prisma.task.findMany({
+    where: {
+      deletedAt: null,
+      ...(q
+        ? {
+            OR: [
+              { title: { contains: q } },
+              { sheetCode: { contains: q } },
+              { stage: { contains: q } },
+            ],
+          }
+        : {}),
+    },
+    orderBy: { updatedAt: "desc" },
+    take: 12,
+    select: {
+      id: true,
+      title: true,
+      stage: true,
+      status: true,
+      shot: { select: { code: true } },
+      scene: { select: { code: true, title: true } },
+      asset: { select: { name: true } },
+      episode: { select: { code: true } },
+    },
+  });
+  return rows.map((row) => ({ id: row.id, title: taskTitle(row), status: row.status }));
 }

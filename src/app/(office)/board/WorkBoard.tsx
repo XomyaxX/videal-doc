@@ -11,6 +11,7 @@ import {
   ReactFlow,
   useEdgesState,
   useNodesState,
+  useReactFlow,
   type Connection,
   type Edge,
   type Node,
@@ -21,10 +22,13 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import {
   BOARD_EDGE_KINDS,
   BOARD_STATUSES,
+  areaFrame,
   edgeLabel,
   edgeWouldCycle,
   hasSameLink,
+  isOverdue,
   normalizeLink,
+  studioToday,
   type BoardEdgeKind,
   type BoardStatus,
 } from "@/lib/work-board-graph";
@@ -38,10 +42,17 @@ type TaskData = {
   status: BoardStatus;
   assigneeId: string | null;
   assigneeName: string;
+  departmentId: string | null;
+  dueOn: string;
+  prodTaskId: string | null;
+  prodTaskTitle: string;
   version: number;
 };
 
+type AreaData = { title: string; count: number; deptKey: string };
 type TaskFlowNode = Node<TaskData, "task">;
+type AreaFlowNode = Node<AreaData, "area">;
+type FlowNode = TaskFlowNode | AreaFlowNode;
 
 type BoardApi = {
   people: BoardPerson[];
@@ -55,7 +66,7 @@ const BoardApiContext = createContext<BoardApi>({
   remove: () => {},
 });
 
-const nodeTypes = { task: TaskCard };
+const nodeTypes = { task: TaskCard, area: AreaNode };
 
 const EDGE_COLOR: Record<BoardEdgeKind, string> = {
   blocks: "#ffb4a2",
@@ -66,6 +77,7 @@ const EDGE_COLOR: Record<BoardEdgeKind, string> = {
 export function WorkBoard({ initial, people }: { initial: BoardSnapshot; people: BoardPerson[] }) {
   const [snapshot, setSnapshot] = useState(initial);
   const [view, setView] = useState<"canvas" | "status" | "people">("canvas");
+  const [focus, setFocus] = useState<string | null>(null);
   const [kind, setKind] = useState<BoardEdgeKind>("depends");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -76,13 +88,16 @@ export function WorkBoard({ initial, people }: { initial: BoardSnapshot; people:
   );
   const dragging = useRef(false);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState<TaskFlowNode>(toNodes(initial.tasks));
+  const [nodes, setNodes, onNodesChange] = useNodesState<FlowNode>(buildBoardNodes(visibleTasks(initial.tasks, null)));
   const [flowEdges, setFlowEdges, onEdgesChange] = useEdgesState<Edge>(toFlowEdges(initial.edges));
   const [seenAt, setSeenAt] = useState(initial.updatedAt);
-  if (snapshot.updatedAt !== seenAt) {
+  const [seenFocus, setSeenFocus] = useState<string | null>(null);
+  const shown = visibleTasks(snapshot.tasks, focus);
+  if (snapshot.updatedAt !== seenAt || focus !== seenFocus) {
     setSeenAt(snapshot.updatedAt);
-    setNodes(toNodes(snapshot.tasks));
-    setFlowEdges(toFlowEdges(snapshot.edges));
+    setSeenFocus(focus);
+    setNodes(buildBoardNodes(shown));
+    setFlowEdges(toFlowEdges(visibleEdges(snapshot.edges, shown)));
   }
 
   useEffect(() => {
@@ -178,8 +193,14 @@ export function WorkBoard({ initial, people }: { initial: BoardSnapshot; people:
       <div className="wb-page">
         <header className="wb-bar">
           <div>
-            <p className="wb-kicker">Закрытый тест</p>
+            <p className="wb-kicker">Закрытый тест · одна доска студии</p>
             <h1>Доска задач</h1>
+            <p className="wb-crumb">
+              <button type="button" onClick={() => setFocus(null)} aria-current={focus ? undefined : "page"}>
+                Вся студия
+              </button>
+              {focus ? <span>{focusLabel(snapshot.tasks, focus)}</span> : null}
+            </p>
           </div>
           <div className="wb-actions">
             <div className="wb-switch" role="tablist" aria-label="Вид доски">
@@ -215,14 +236,34 @@ export function WorkBoard({ initial, people }: { initial: BoardSnapshot; people:
               disabled={busy}
               onClick={() => {
                 setBusy(true);
-                void send("/api/board/tasks", "POST", { title: "Новая задача" }).finally(() => setBusy(false));
+                void send("/api/board/tasks", "POST", {
+                  title: "Новая задача",
+                  departmentId: focus && focus !== NONE_DEPT ? focus : null,
+                }).finally(() => setBusy(false));
               }}
             >
               Новая задача
             </button>
           </div>
         </header>
-        <p className="wb-hint">{view === "canvas" ? kindMeta.hint : "Перетащите карточку в другую колонку."}</p>
+        <div className="wb-depts" aria-label="Отделы">
+          {departmentChips(snapshot.tasks).map((chip) => (
+            <button
+              key={chip.key}
+              type="button"
+              aria-pressed={focus === chip.key}
+              onClick={() => setFocus(chip.key)}
+            >
+              {chip.title}
+              <span>{chip.count}</span>
+            </button>
+          ))}
+        </div>
+        <p className="wb-hint">
+          {view === "canvas"
+            ? `${focus ? "Открыт один отдел. «Вся студия» возвращает к общей схеме. " : "Нажмите жёлтый ярлык отдела, чтобы провалиться внутрь. "}${kindMeta.hint}`
+            : "Перетащите карточку в другую колонку. Просроченный срок подсвечен."}
+        </p>
         {notice ? (
           <p className="wb-notice" role="status">
             {notice}
@@ -239,6 +280,9 @@ export function WorkBoard({ initial, people }: { initial: BoardSnapshot; people:
                 nodeTypes={nodeTypes}
                 onConnect={onConnect}
                 isValidConnection={isValidConnection}
+                onNodeClick={(_, node) => {
+                  if (node.type === "area" && !focus) setFocus(String((node.data as AreaData).deptKey));
+                }}
                 onNodeDragStart={() => {
                   dragging.current = true;
                 }}
@@ -272,6 +316,7 @@ export function WorkBoard({ initial, people }: { initial: BoardSnapshot; people:
                 proOptions={{ hideAttribution: false }}
                 colorMode="dark"
               >
+                <FitFocus focus={focus ?? "studio"} />
                 <Background variant={BackgroundVariant.Lines} gap={28} color="rgba(245, 197, 66, 0.14)" />
                 <MiniMap
                   pannable
@@ -292,8 +337,8 @@ export function WorkBoard({ initial, people }: { initial: BoardSnapshot; people:
           {view !== "canvas" ? (
             <WorkColumns
               mode={view}
-              tasks={snapshot.tasks}
-              edges={snapshot.edges}
+              tasks={shown}
+              edges={visibleEdges(snapshot.edges, shown)}
               people={people}
               onMove={(task, patch) => {
                 void send(`/api/board/tasks/${task.id}`, "PATCH", { version: task.version, ...patch });
@@ -320,8 +365,9 @@ function TaskCard({ id, data, selected }: NodeProps<TaskFlowNode>) {
     }
   }
 
+  const late = isOverdue(data.dueOn, data.status, studioToday());
   return (
-    <article className={selected ? "wb-card is-selected" : "wb-card"}>
+    <article className={selected ? "wb-card is-selected" : late ? "wb-card is-overdue" : "wb-card"}>
       <Handle type="target" position={Position.Left} className="wb-handle" />
       <div className="wb-title wb-drag">
         <input
@@ -349,7 +395,7 @@ function TaskCard({ id, data, selected }: NodeProps<TaskFlowNode>) {
           data-wb={id}
           aria-label="Описание"
           rows={3}
-          placeholder="Что сделать"
+          placeholder="Обязанности"
           value={body}
           onChange={(event) => setBody(event.target.value)}
           onBlur={() => {
@@ -386,28 +432,194 @@ function TaskCard({ id, data, selected }: NodeProps<TaskFlowNode>) {
             </option>
           ))}
         </select>
+        <label className="wb-meta nodrag nopan">
+          Срок
+          <input
+            type="date"
+            value={data.dueOn}
+            onChange={(event) => api.patch(id, data.version, { dueOn: event.target.value })}
+          />
+        </label>
+        {late ? <p className="wb-overdue">Просрочено</p> : null}
+        <ProdPicker
+          taskId={id}
+          version={data.version}
+          prodTaskId={data.prodTaskId}
+          prodTaskTitle={data.prodTaskTitle}
+        />
       </div>
       <Handle type="source" position={Position.Right} className="wb-handle" />
     </article>
   );
 }
 
-function toNodes(tasks: BoardTask[]): TaskFlowNode[] {
-  return tasks.map((task) => ({
+function AreaNode({ data }: NodeProps<AreaFlowNode>) {
+  return (
+    <div className="wb-area">
+      <div className="wb-area-label">
+        {data.title}
+        <span>{data.count}</span>
+      </div>
+    </div>
+  );
+}
+
+function FitFocus({ focus }: { focus: string }) {
+  const { fitView } = useReactFlow();
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void fitView({ padding: 0.16, duration: 380 });
+    }, 40);
+    return () => window.clearTimeout(timer);
+  }, [focus, fitView]);
+  return null;
+}
+
+function ProdPicker({
+  taskId,
+  version,
+  prodTaskId,
+  prodTaskTitle,
+}: {
+  taskId: string;
+  version: number;
+  prodTaskId: string | null;
+  prodTaskTitle: string;
+}) {
+  const api = useContext(BoardApiContext);
+  const [hits, setHits] = useState<{ id: string; title: string }[]>([]);
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="wb-prod nodrag nopan">
+      <span>Производство</span>
+      {prodTaskId ? (
+        <button type="button" onClick={() => api.patch(taskId, version, { prodTaskId: null })}>
+          {prodTaskTitle || "Задача"} ×
+        </button>
+      ) : (
+        <>
+          <input
+            aria-label="Найти производственную задачу"
+            placeholder="Не связана"
+            onFocus={() => {
+              setOpen(true);
+              void fetch("/api/board/prod-tasks")
+                .then((res) => (res.ok ? res.json() : { tasks: [] }))
+                .then((data: { tasks?: { id: string; title: string }[] }) => setHits(data.tasks ?? []));
+            }}
+            onChange={(event) => {
+              const q = event.target.value;
+              setOpen(true);
+              void fetch(`/api/board/prod-tasks?q=${encodeURIComponent(q)}`)
+                .then((res) => (res.ok ? res.json() : { tasks: [] }))
+                .then((data: { tasks?: { id: string; title: string }[] }) => setHits(data.tasks ?? []));
+            }}
+          />
+          {open && hits.length ? (
+            <ul>
+              {hits.map((hit) => (
+                <li key={hit.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpen(false);
+                      api.patch(taskId, version, { prodTaskId: hit.id });
+                    }}
+                  >
+                    {hit.title}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}
+
+const NONE_DEPT = "__none__";
+
+function visibleTasks(tasks: BoardTask[], focus: string | null) {
+  if (!focus) return tasks;
+  if (focus === NONE_DEPT) return tasks.filter((task) => !task.departmentId);
+  return tasks.filter((task) => task.departmentId === focus);
+}
+
+function visibleEdges(edges: BoardSnapshot["edges"], tasks: BoardTask[]) {
+  const ids = new Set(tasks.map((task) => task.id));
+  return edges.filter((edge) => ids.has(edge.fromId) && ids.has(edge.toId));
+}
+
+function departmentChips(tasks: BoardTask[]) {
+  const counts = new Map<string, { title: string; count: number }>();
+  for (const task of tasks) {
+    const key = task.departmentId ?? NONE_DEPT;
+    const title = key === NONE_DEPT ? "Без отдела" : task.departmentName || "Отдел";
+    const row = counts.get(key) ?? { title, count: 0 };
+    row.count += 1;
+    counts.set(key, row);
+  }
+  return [...counts.entries()]
+    .map(([key, row]) => ({ key, ...row }))
+    .sort((a, b) => a.title.localeCompare(b.title, "ru"));
+}
+
+function focusLabel(tasks: BoardTask[], focus: string) {
+  if (focus === NONE_DEPT) return "Без отдела";
+  return tasks.find((task) => task.departmentId === focus)?.departmentName || "Отдел";
+}
+
+function buildBoardNodes(tasks: BoardTask[]): FlowNode[] {
+  const groups = new Map<string, BoardTask[]>();
+  for (const task of tasks) {
+    const key = task.departmentId ?? NONE_DEPT;
+    const list = groups.get(key) ?? [];
+    list.push(task);
+    groups.set(key, list);
+  }
+  const areas: AreaFlowNode[] = [];
+  for (const [key, cards] of groups) {
+    if (!cards.length) continue;
+    const frame = areaFrame(cards);
+    areas.push({
+      id: `area:${key}`,
+      type: "area",
+      position: { x: frame.x, y: frame.y },
+      data: {
+        title: key === NONE_DEPT ? "Без отдела" : cards[0]?.departmentName || "Отдел",
+        count: cards.length,
+        deptKey: key,
+      },
+      style: { width: frame.width, height: frame.height },
+      draggable: false,
+      selectable: true,
+      connectable: false,
+      deletable: false,
+      zIndex: 0,
+    });
+  }
+  const cards: TaskFlowNode[] = tasks.map((task) => ({
     id: task.id,
     type: "task",
     position: { x: task.posX, y: task.posY },
     dragHandle: ".wb-drag",
     deletable: false,
+    zIndex: 2,
     data: {
       title: task.title,
       body: task.body,
       status: task.status,
       assigneeId: task.assigneeId,
       assigneeName: task.assigneeName,
+      departmentId: task.departmentId,
+      dueOn: task.dueOn,
+      prodTaskId: task.prodTaskId,
+      prodTaskTitle: task.prodTaskTitle,
       version: task.version,
     },
   }));
+  return [...areas, ...cards];
 }
 
 function toFlowEdges(edges: BoardSnapshot["edges"]): Edge[] {

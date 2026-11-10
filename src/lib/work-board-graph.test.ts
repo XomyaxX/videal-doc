@@ -5,7 +5,11 @@ import {
   edgeWouldCycle,
   hasSameLink,
   isAssignableEmployee,
+  isOverdue,
   normalizeLink,
+  placeStaffCards,
+  staffCardBody,
+  staffCardTitle,
   stableTopo,
 } from "./work-board-graph";
 
@@ -91,6 +95,46 @@ describe("порядок", () => {
   it("раздаёт шаг 10", () => {
     const orders = assignSortOrders(["a", "b", "c"]);
     assert.deepEqual([...orders.values()], [10, 20, 30]);
+  });
+});
+
+describe("карточки сотрудников и срок", () => {
+  it("называет карточку отделом и именем", () => {
+    assert.equal(staffCardTitle("Анимация", "Валерий", "Гирсов"), "Анимация — Валерий");
+    assert.equal(staffCardTitle(null, "", "Светова"), "Без отдела — Светова");
+  });
+
+  it("пишет должность и доступ и не подставляет обязанности", () => {
+    const body = staffCardBody({
+      position: "Художник-аниматор",
+      accessNames: ["Свои документы", "Свои производственные задачи"],
+      extraDepartments: [],
+    });
+    assert.equal(
+      body,
+      "Должность: Художник-аниматор\nДоступ: Свои документы; Свои производственные задачи",
+    );
+    assert.equal(body.includes("Обязанности"), false);
+  });
+
+  it("оставляет описание пустым, если в базе нет ни должности, ни доступа", () => {
+    assert.equal(staffCardBody({ position: "  ", accessNames: [], extraDepartments: [] }), "");
+  });
+
+  it("считает просрочку только до сегодня и не для готовых", () => {
+    assert.equal(isOverdue("2026-11-09", "todo", "2026-11-10"), true);
+    assert.equal(isOverdue("2026-11-10", "wip", "2026-11-10"), false);
+    assert.equal(isOverdue("2026-11-09", "done", "2026-11-10"), false);
+    assert.equal(isOverdue("", "todo", "2026-11-10"), false);
+  });
+
+  it("раскладывает отделы рядом, а людей внутри отдела сеткой", () => {
+    const slots = placeStaffCards([1, 3]);
+    assert.equal(slots[0]?.length, 1);
+    assert.equal(slots[1]?.length, 3);
+    assert.ok((slots[1]?.[0]?.x ?? 0) > (slots[0]?.[0]?.x ?? 0));
+    assert.ok((slots[1]?.[1]?.x ?? 0) > (slots[1]?.[0]?.x ?? 0));
+    assert.ok((slots[1]?.[2]?.y ?? 0) > (slots[1]?.[0]?.y ?? 0));
   });
 });
 

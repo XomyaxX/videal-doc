@@ -7,6 +7,11 @@ export type BoardTask = {
   status: BoardStatus;
   assigneeId: string | null;
   assigneeName: string;
+  departmentId: string | null;
+  departmentName: string;
+  dueOn: string;
+  prodTaskId: string | null;
+  prodTaskTitle: string;
   posX: number;
   posY: number;
   sortOrder: number;

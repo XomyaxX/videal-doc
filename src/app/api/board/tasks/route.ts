@@ -5,6 +5,7 @@ import { boardApiGuard, boardErrorResponse, createTask } from "@/lib/work-board"
 const schema = z.object({
   title: z.string().trim().min(1).max(200),
   body: z.string().max(4000).optional(),
+  departmentId: z.string().min(1).nullable().optional(),
 });
 
 export async function POST(req: NextRequest) {
