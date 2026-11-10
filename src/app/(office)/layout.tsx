@@ -6,6 +6,7 @@ import { PushSubscribe } from "@/components/PushSubscribe";
 import { PresencePing } from "@/components/PresencePing";
 import { NotifySounds } from "@/components/NotifySounds";
 import { chatUnreadTotal } from "@/lib/chat-server";
+import { canUseWorkBoard } from "@/lib/work-board";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,7 @@ export default async function OfficeLayout({ children }: { children: React.React
       chatUnread={chatUnread}
       orgShort={orgNameShort(org)}
       prodTaskCount={prodTaskCount}
+      showWorkBoard={canUseWorkBoard(user)}
     >
       <PushSubscribe />
       <PresencePing />
